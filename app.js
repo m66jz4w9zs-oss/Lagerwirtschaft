@@ -1,90 +1,61 @@
-/* app.js - Komplettversion für Lagerwirtschaft Web-App
-   Enthält:
-   - IndexedDB statt SQLite
-   - Kamera
-   - OCR via Tesseract.js
-   - Bluetooth via Web Bluetooth (wenn unterstützt)
-   - Drucken via window.print() als AirPrint-Ersatz
-*/
-
-const STORAGE_KEYS = {
-  settings: "paketlager_settings"
-};
-
-const DB_NAME = "paketlager_db";
+const DB_NAME = "lagerwirtschaft_db";
 const DB_VERSION = 1;
 const STORE_PACKAGES = "packages";
-const STORE_PENDING_PRINTS = "pending_prints";
+const STORE_BACKUPS = "backups";
 
-const defaultSettings = {
-  printerMode: "label", // label | airPrint | bluetooth
-  printerIP: "",
-  printerPort: 9100,
-  bluetoothDeviceIdentifier: "",
-  bluetoothDeviceName: "",
-  labelSize: "100x100",
-  paperSize: "A4",
-  orientation: "portrait",
-  fontScale: 1
+let db = null;
+let cameraStream = null;
+let currentPhotoDataUrl = "";
+
+const els = {
+  tabs: document.querySelectorAll(".tab-btn"),
+  panels: document.querySelectorAll(".tab-panel"),
+
+  camera: document.getElementById("camera"),
+  cameraPlaceholder: document.getElementById("cameraPlaceholder"),
+  photo: document.getElementById("photo"),
+  photoPlaceholder: document.getElementById("photoPlaceholder"),
+
+  startCameraBtn: document.getElementById("startCameraBtn"),
+  stopCameraBtn: document.getElementById("stopCameraBtn"),
+  takePhotoBtn: document.getElementById("takePhotoBtn"),
+  ocrBtn: document.getElementById("ocrBtn"),
+
+  ocrText: document.getElementById("ocrText"),
+  trackingNumber: document.getElementById("trackingNumber"),
+  carrier: document.getElementById("carrier"),
+  recipient: document.getElementById("recipient"),
+  storageLocation: document.getElementById("storageLocation"),
+  notes: document.getElementById("notes"),
+
+  saveBtn: document.getElementById("saveBtn"),
+  printBtn: document.getElementById("printBtn"),
+  clearBtn: document.getElementById("clearBtn"),
+
+  acceptStatus: document.getElementById("acceptStatus"),
+
+  searchInput: document.getElementById("searchInput"),
+  searchCarrier: document.getElementById("searchCarrier"),
+  searchBtn: document.getElementById("searchBtn"),
+  showAllBtn: document.getElementById("showAllBtn"),
+  exportBtn: document.getElementById("exportBtn"),
+  importBtn: document.getElementById("importBtn"),
+  importFile: document.getElementById("importFile"),
+  searchStatus: document.getElementById("searchStatus"),
+  results: document.getElementById("results"),
+
+  forceBackupBtn: document.getElementById("forceBackupBtn"),
+  restoreBackupBtn: document.getElementById("restoreBackupBtn"),
+  deleteAllBtn: document.getElementById("deleteAllBtn"),
+  checkBluetoothBtn: document.getElementById("checkBluetoothBtn"),
+  bluetoothStatus: document.getElementById("bluetoothStatus"),
+  zplOutput: document.getElementById("zplOutput"),
+
+  printLabel: document.getElementById("printLabel")
 };
 
-const state = {
-  db: null,
-  packages: [],
-  settings: { ...defaultSettings },
-  searchQuery: "",
-  sortBy: "arrival",
-  sortAscending: false,
-  cameraStream: null,
-  currentImageDataUrl: "",
-  ocrRawText: "",
-  bluetoothDevice: null,
-  bluetoothCharacteristic: null
-};
-
-/* =========================
-   Utilities
-========================= */
-
-function $(id) {
-  return document.getElementById(id);
-}
-
-function padSlot(slot) {
-  return String(slot).padStart(3, "0");
-}
-
-function formatDateDE(date) {
-  return new Intl.DateTimeFormat("de-DE", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric"
-  }).format(date);
-}
-
-function formatDateTimeDE(date) {
-  return new Intl.DateTimeFormat("de-DE", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit"
-  }).format(date);
-}
-
-function fullName(pkg) {
-  return `${pkg.firstName || ""} ${pkg.lastName || ""}`.trim();
-}
-
-function addressLine(pkg) {
-  return [pkg.street, pkg.houseNo].filter(Boolean).join(" ").trim();
-}
-
-function setStatus(id, text, isError = false) {
-  const el = $(id);
-  if (!el) return;
-  el.textContent = text || "";
-  el.classList.toggle("error", !!isError);
+function setStatus(el, message) {
+  el.textContent = message;
 }
 
 function escapeHtml(value) {
@@ -96,805 +67,833 @@ function escapeHtml(value) {
     .replaceAll("'", "&#039;");
 }
 
-function loadSettings() {
+function nowIso() {
+  return new Date().toISOString();
+}
+
+function formatDateTime(iso) {
   try {
-    return { ...defaultSettings, ...JSON.parse(localStorage.getItem(STORAGE_KEYS.settings) || "{}") };
+    return new Date(iso).toLocaleString("de-DE");
   } catch {
-    return { ...defaultSettings };
+    return iso;
   }
 }
 
-function saveSettings(settings) {
-  localStorage.setItem(STORAGE_KEYS.settings, JSON.stringify(settings));
+function generateId() {
+  return crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}_${Math.random().toString(16).slice(2)}`;
 }
 
-function readReceiveForm() {
-  return {
-    firstName: $("firstName")?.value || "",
-    lastName: $("lastName")?.value || "",
-    street: $("street")?.value || "",
-    houseNo: $("houseNo")?.value || "",
-    postalCode: $("postalCode")?.value || "",
-    city: $("city")?.value || ""
-  };
+function sanitizeZplText(value) {
+  return String(value ?? "")
+    .replace(/[\^~\\]/g, " ")
+    .replace(/\r?\n/g, " ")
+    .trim();
 }
 
-function fillReceiveForm(fields) {
-  if ($("firstName")) $("firstName").value = fields.firstName || "";
-  if ($("lastName")) $("lastName").value = fields.lastName || "";
-  if ($("street")) $("street").value = fields.street || "";
-  if ($("houseNo")) $("houseNo").value = fields.houseNo || "";
-  if ($("postalCode")) $("postalCode").value = fields.postalCode || "";
-  if ($("city")) $("city").value = fields.city || "";
+function buildZPL(pkg) {
+  const tracking = sanitizeZplText(pkg.trackingNumber);
+  const recipient = sanitizeZplText(pkg.recipient);
+  const carrier = sanitizeZplText(pkg.carrier);
+  const location = sanitizeZplText(pkg.storageLocation);
+
+  return [
+    "^XA",
+    "^PW800",
+    "^LL600",
+    "^CF0,40",
+    "^FO40,40^FDPaketlabel^FS",
+    "^CF0,30",
+    `^FO40,110^FDNummer: ${tracking}^FS`,
+    `^FO40,160^FDEmpfaenger: ${recipient}^FS`,
+    `^FO40,210^FDVersand: ${carrier}^FS`,
+    `^FO40,260^FDLagerplatz: ${location}^FS`,
+    "^FO40,330^BY2",
+    `^BCN,120,Y,N,N^FD${tracking || "UNBEKANNT"}^FS`,
+    "^XZ"
+  ].join("\n");
 }
 
-function clearReceiveForm() {
-  fillReceiveForm({
-    firstName: "",
-    lastName: "",
-    street: "",
-    houseNo: "",
-    postalCode: "",
-    city: ""
-  });
-  state.currentImageDataUrl = "";
-  state.ocrRawText = "";
-  if ($("capturedImage")) $("capturedImage").src = "";
-  if ($("ocrRawText")) $("ocrRawText").textContent = "";
+function buildPrintHtml(pkg) {
+  return `
+    <h1 style="margin:0 0 12px;font-size:28px;">Paketlabel</h1>
+    <div style="font-size:18px;line-height:1.6;">
+      <div><strong>Paketnummer:</strong> ${escapeHtml(pkg.trackingNumber || "-")}</div>
+      <div><strong>Empfänger:</strong> ${escapeHtml(pkg.recipient || "-")}</div>
+      <div><strong>Versanddienst:</strong> ${escapeHtml(pkg.carrier || "-")}</div>
+      <div><strong>Lagerplatz:</strong> ${escapeHtml(pkg.storageLocation || "-")}</div>
+      <div><strong>Eingang:</strong> ${escapeHtml(formatDateTime(pkg.createdAt))}</div>
+      ${pkg.notes ? `<div><strong>Notiz:</strong> ${escapeHtml(pkg.notes)}</div>` : ""}
+      <hr style="margin:16px 0;">
+      <div style="font-size:16px;">Barcode-Inhalt:</div>
+      <div style="font-size:22px;font-weight:700;letter-spacing:1px;">${escapeHtml(pkg.trackingNumber || "-")}</div>
+    </div>
+  `;
 }
 
 function switchTab(tabName) {
-  document.querySelectorAll(".tab").forEach(btn => {
+  els.tabs.forEach(btn => {
     btn.classList.toggle("active", btn.dataset.tab === tabName);
   });
 
-  document.querySelectorAll(".tab-panel").forEach(panel => {
-    panel.classList.toggle("active", panel.id === `tab-${tabName}`);
+  els.panels.forEach(panel => {
+    panel.classList.toggle("hidden", panel.id !== `tab-${tabName}`);
   });
 }
 
-/* =========================
-   IndexedDB (SQLite-Ersatz)
-========================= */
-
-function openDB() {
+async function openDatabase() {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    const request = indexedDB.open(DB_NAME, DB_VERSION);
 
-    req.onupgradeneeded = () => {
-      const db = req.result;
+    request.onupgradeneeded = event => {
+      const database = event.target.result;
 
-      if (!db.objectStoreNames.contains(STORE_PACKAGES)) {
-        const store = db.createObjectStore(STORE_PACKAGES, { keyPath: "id" });
-        store.createIndex("slot", "slot", { unique: true });
-        store.createIndex("lastName", "lastName", { unique: false });
-        store.createIndex("arrivalAt", "arrivalAt", { unique: false });
+      if (!database.objectStoreNames.contains(STORE_PACKAGES)) {
+        const store = database.createObjectStore(STORE_PACKAGES, { keyPath: "id" });
+        store.createIndex("trackingNumber", "trackingNumber", { unique: false });
+        store.createIndex("recipient", "recipient", { unique: false });
+        store.createIndex("carrier", "carrier", { unique: false });
+        store.createIndex("storageLocation", "storageLocation", { unique: false });
+        store.createIndex("createdAt", "createdAt", { unique: false });
       }
 
-      if (!db.objectStoreNames.contains(STORE_PENDING_PRINTS)) {
-        db.createObjectStore(STORE_PENDING_PRINTS, { keyPath: "id" });
+      if (!database.objectStoreNames.contains(STORE_BACKUPS)) {
+        database.createObjectStore(STORE_BACKUPS, { keyPath: "id" });
       }
     };
 
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
+    request.onsuccess = () => {
+      db = request.result;
+      resolve(db);
+    };
+
+    request.onerror = () => reject(request.error);
   });
 }
 
 function tx(storeName, mode = "readonly") {
-  const transaction = state.db.transaction(storeName, mode);
-  return transaction.objectStore(storeName);
+  return db.transaction(storeName, mode).objectStore(storeName);
 }
 
-function idbGetAll(storeName) {
+async function addPackage(pkg) {
   return new Promise((resolve, reject) => {
-    const req = tx(storeName).getAll();
-    req.onsuccess = () => resolve(req.result || []);
-    req.onerror = () => reject(req.error);
+    const request = tx(STORE_PACKAGES, "readwrite").add(pkg);
+    request.onsuccess = () => resolve(pkg);
+    request.onerror = () => reject(request.error);
   });
 }
 
-function idbPut(storeName, value) {
+async function putPackage(pkg) {
   return new Promise((resolve, reject) => {
-    const req = tx(storeName, "readwrite").put(value);
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
+    const request = tx(STORE_PACKAGES, "readwrite").put(pkg);
+    request.onsuccess = () => resolve(pkg);
+    request.onerror = () => reject(request.error);
   });
 }
 
-function idbDelete(storeName, key) {
+async function getAllPackages() {
   return new Promise((resolve, reject) => {
-    const req = tx(storeName, "readwrite").delete(key);
-    req.onsuccess = () => resolve();
-    req.onerror = () => reject(req.error);
+    const request = tx(STORE_PACKAGES).getAll();
+    request.onsuccess = () => {
+      const items = Array.isArray(request.result) ? request.result : [];
+      items.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+      resolve(items);
+    };
+    request.onerror = () => reject(request.error);
   });
-}
-
-async function loadPackagesFromDB() {
-  state.packages = await idbGetAll(STORE_PACKAGES);
-}
-
-function allocateSlot(items) {
-  const used = items
-    .map(x => Number(x.slot))
-    .filter(Number.isFinite)
-    .sort((a, b) => a - b);
-
-  let candidate = 1;
-  for (const s of used) {
-    if (s === candidate) candidate++;
-    else if (s > candidate) break;
-  }
-
-  if (candidate > 500) {
-    throw new Error("Lager voll (500/500).");
-  }
-
-  return candidate;
-}
-
-async function createPackage(fields) {
-  const slot = allocateSlot(state.packages);
-
-  const pkg = {
-    id: crypto.randomUUID(),
-    slot,
-    firstName: (fields.firstName || "").trim(),
-    lastName: (fields.lastName || "").trim(),
-    street: (fields.street || "").trim(),
-    houseNo: (fields.houseNo || "").trim(),
-    postalCode: (fields.postalCode || "").trim(),
-    city: (fields.city || "").trim(),
-    arrivalAt: new Date().toISOString()
-  };
-
-  await idbPut(STORE_PACKAGES, pkg);
-  state.packages.push(pkg);
-  return pkg;
 }
 
 async function deletePackage(id) {
-  await idbDelete(STORE_PACKAGES, id);
-  state.packages = state.packages.filter(x => x.id !== id);
+  return new Promise((resolve, reject) => {
+    const request = tx(STORE_PACKAGES, "readwrite").delete(id);
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error);
+  });
 }
 
-async function enqueuePendingPrint(payload) {
-  const item = {
-    id: crypto.randomUUID(),
-    payload,
-    createdAt: new Date().toISOString()
+async function clearPackages() {
+  return new Promise((resolve, reject) => {
+    const request = tx(STORE_PACKAGES, "readwrite").clear();
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function saveInternalBackup(reason = "auto") {
+  const packages = await getAllPackages();
+  const backup = {
+    id: `backup_${Date.now()}`,
+    createdAt: nowIso(),
+    reason,
+    packages
   };
-  await idbPut(STORE_PENDING_PRINTS, item);
-}
 
-async function pendingPrintCount() {
-  const items = await idbGetAll(STORE_PENDING_PRINTS);
-  return items.length;
-}
-
-/* =========================
-   Search + Render
-========================= */
-
-function matchesQuery(pkg, q) {
-  if (!q) return true;
-
-  const haystack = [
-    pkg.firstName,
-    pkg.lastName,
-    pkg.street,
-    pkg.houseNo,
-    pkg.postalCode,
-    pkg.city
-  ]
-    .join(" ")
-    .toLowerCase();
-
-  return haystack.includes(q);
-}
-
-function getFilteredAndSortedPackages() {
-  const q = state.searchQuery.trim().toLowerCase();
-
-  const filtered = state.packages.filter(pkg => matchesQuery(pkg, q));
-
-  filtered.sort((a, b) => {
-    if (state.sortBy === "number") {
-      return state.sortAscending ? a.slot - b.slot : b.slot - a.slot;
-    }
-
-    const da = new Date(a.arrivalAt).getTime();
-    const db = new Date(b.arrivalAt).getTime();
-    return state.sortAscending ? da - db : db - da;
+  await new Promise((resolve, reject) => {
+    const request = tx(STORE_BACKUPS, "readwrite").put(backup);
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error);
   });
 
-  return filtered;
+  localStorage.setItem("lagerwirtschaft_latest_backup", JSON.stringify(backup));
+  localStorage.setItem("lagerwirtschaft_last_backup_time", backup.createdAt);
+
+  const allBackups = await getAllBackups();
+  const sorted = allBackups.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  const keep = 24;
+
+  for (let i = keep; i < sorted.length; i++) {
+    await deleteBackup(sorted[i].id);
+  }
+
+  return backup;
 }
 
-function renderResults() {
-  const container = $("results");
-  if (!container) return;
+async function getAllBackups() {
+  return new Promise((resolve, reject) => {
+    const request = tx(STORE_BACKUPS).getAll();
+    request.onsuccess = () => resolve(request.result || []);
+    request.onerror = () => reject(request.error);
+  });
+}
 
-  container.innerHTML = "";
-  const items = getFilteredAndSortedPackages();
+async function deleteBackup(id) {
+  return new Promise((resolve, reject) => {
+    const request = tx(STORE_BACKUPS, "readwrite").delete(id);
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error);
+  });
+}
 
-  if (items.length === 0) {
-    container.innerHTML = `<div class="empty">Keine Pakete gefunden.</div>`;
+async function getLatestInternalBackup() {
+  const backups = await getAllBackups();
+  backups.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+  if (backups.length > 0) {
+    return backups[0];
+  }
+
+  const local = localStorage.getItem("lagerwirtschaft_latest_backup");
+  if (local) {
+    try {
+      return JSON.parse(local);
+    } catch {
+      return null;
+    }
+  }
+
+  return null;
+}
+
+async function restoreBackupData(backup) {
+  if (!backup || !Array.isArray(backup.packages)) {
+    throw new Error("Ungültiges Backup");
+  }
+
+  await clearPackages();
+
+  for (const pkg of backup.packages) {
+    await putPackage(pkg);
+  }
+
+  await saveInternalBackup("restore");
+}
+
+async function startCamera() {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    throw new Error("Dieses Gerät oder dieser Browser unterstützt keine Kamera-API.");
+  }
+
+  if (cameraStream) {
     return;
   }
 
-  for (const pkg of items) {
-    const node = document.createElement("article");
-    node.className = "result-item";
-    node.innerHTML = `
-      <div class="result-number">${padSlot(pkg.slot)}</div>
-      <div class="result-body">
-        <div class="result-name">${escapeHtml(fullName(pkg))}</div>
-        <div class="result-address">${escapeHtml(addressLine(pkg))}, ${escapeHtml(pkg.postalCode)} ${escapeHtml(pkg.city)}</div>
-        <div class="result-date">${escapeHtml(formatDateTimeDE(new Date(pkg.arrivalAt)))}</div>
-      </div>
-      <div class="result-actions">
-        <button class="print-btn">Drucken</button>
-        <button class="danger delete-btn">Löschen</button>
-      </div>
-    `;
-
-    node.querySelector(".delete-btn").addEventListener("click", async () => {
-      const ok = confirm(`Paket ${padSlot(pkg.slot)} wirklich löschen?`);
-      if (!ok) return;
-
-      try {
-        await deletePackage(pkg.id);
-        renderResults();
-      } catch (err) {
-        alert(err.message || "Löschen fehlgeschlagen.");
-      }
-    });
-
-    node.querySelector(".print-btn").addEventListener("click", async () => {
-      try {
-        await printLabelForPackage(pkg);
-      } catch (err) {
-        alert(err.message || "Druck fehlgeschlagen.");
-      }
-    });
-
-    container.appendChild(node);
-  }
-}
-
-/* =========================
-   Parser
-========================= */
-
-function parseOCRText(raw) {
-  const lines = raw
-    .replaceAll("\t", " ")
-    .split("\n")
-    .map(x => x.trim())
-    .filter(Boolean);
-
-  const fields = {
-    firstName: "",
-    lastName: "",
-    street: "",
-    houseNo: "",
-    postalCode: "",
-    city: ""
-  };
-
-  const postalRegex = /\b(\d{5})\b\s+(.+)$/;
-  let postalIndex = -1;
-
-  for (let i = 0; i < lines.length; i++) {
-    const m = lines[i].match(postalRegex);
-    if (m) {
-      fields.postalCode = m[1].trim();
-      fields.city = m[2].trim();
-      postalIndex = i;
-      break;
-    }
-  }
-
-  if (postalIndex > 0) {
-    const addrLine = lines[postalIndex - 1];
-    const parts = addrLine.split(" ").filter(Boolean);
-    if (parts.length >= 2) {
-      fields.houseNo = parts[parts.length - 1];
-      fields.street = parts.slice(0, -1).join(" ");
-    } else {
-      fields.street = addrLine;
-    }
-  }
-
-  for (const line of lines.slice(0, 6)) {
-    if (looksLikeNoise(line)) continue;
-    const words = line.split(" ").filter(Boolean);
-    if (words.length >= 2) {
-      fields.firstName = words[0];
-      fields.lastName = words.slice(1).join(" ");
-      break;
-    }
-  }
-
-  return fields;
-}
-
-function looksLikeNoise(line) {
-  const l = line.toLowerCase();
-  if (l.includes("tracking") || l.includes("sendung") || l.includes("paket")) return true;
-  if (l.includes("tel") || l.includes("phone")) return true;
-  if (/\b\d{10,}\b/.test(l)) return true;
-  return false;
-}
-
-/* =========================
-   OCR
-========================= */
-
-async function ensureTesseractLoaded() {
-  if (window.Tesseract) return;
-
-  await new Promise((resolve, reject) => {
-    const script = document.createElement("script");
-    script.src = "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js";
-    script.onload = resolve;
-    script.onerror = () => reject(new Error("Tesseract.js konnte nicht geladen werden."));
-    document.head.appendChild(script);
-  });
-}
-
-async function runOCRFromCurrentImage() {
-  if (!state.currentImageDataUrl) {
-    throw new Error("Kein Bild vorhanden.");
-  }
-
-  setStatus("receiveStatus", "OCR läuft…");
-
-  await ensureTesseractLoaded();
-
-  const result = await window.Tesseract.recognize(state.currentImageDataUrl, ["deu", "eng"]);
-  const text = result?.data?.text || "";
-
-  state.ocrRawText = text;
-  if ($("ocrRawText")) $("ocrRawText").textContent = text;
-
-  const fields = parseOCRText(text);
-  fillReceiveForm(fields);
-
-  setStatus("receiveStatus", "OCR fertig. Bitte Daten prüfen.");
-}
-
-/* =========================
-   Camera
-========================= */
-
-async function startCamera() {
-  if (!navigator.mediaDevices?.getUserMedia) {
-    throw new Error("Kamera wird von diesem Browser nicht unterstützt.");
-  }
-
-  const video = $("cameraVideo");
-  if (!video) {
-    throw new Error("cameraVideo Element fehlt in index.html.");
-  }
-
-  stopCamera();
-
   const stream = await navigator.mediaDevices.getUserMedia({
-    video: { facingMode: "environment" },
+    video: {
+      facingMode: { ideal: "environment" }
+    },
     audio: false
   });
 
-  state.cameraStream = stream;
-  video.srcObject = stream;
-  await video.play();
-
-  setStatus("receiveStatus", "Kamera aktiv.");
+  cameraStream = stream;
+  els.camera.srcObject = stream;
+  els.camera.classList.remove("hidden");
+  els.cameraPlaceholder.classList.add("hidden");
+  await els.camera.play();
 }
 
 function stopCamera() {
-  if (state.cameraStream) {
-    for (const track of state.cameraStream.getTracks()) {
-      track.stop();
-    }
-    state.cameraStream = null;
+  if (cameraStream) {
+    cameraStream.getTracks().forEach(track => track.stop());
+    cameraStream = null;
   }
 
-  const video = $("cameraVideo");
-  if (video) {
-    video.srcObject = null;
-  }
+  els.camera.srcObject = null;
+  els.camera.classList.add("hidden");
+  els.cameraPlaceholder.classList.remove("hidden");
 }
 
-function capturePhoto() {
-  const video = $("cameraVideo");
-  const canvas = $("cameraCanvas");
-  const img = $("capturedImage");
-
-  if (!video || !canvas || !img) {
-    throw new Error("Kamera-Elemente fehlen in index.html.");
+function takePhoto() {
+  if (!cameraStream || !els.camera.videoWidth || !els.camera.videoHeight) {
+    throw new Error("Kamera ist nicht aktiv.");
   }
 
-  const width = video.videoWidth;
-  const height = video.videoHeight;
-
-  if (!width || !height) {
-    throw new Error("Noch kein Kamerabild verfügbar.");
-  }
-
-  canvas.width = width;
-  canvas.height = height;
+  const canvas = document.createElement("canvas");
+  canvas.width = els.camera.videoWidth;
+  canvas.height = els.camera.videoHeight;
 
   const ctx = canvas.getContext("2d");
-  ctx.drawImage(video, 0, 0, width, height);
+  ctx.drawImage(els.camera, 0, 0, canvas.width, canvas.height);
 
-  const dataUrl = canvas.toDataURL("image/jpeg", 0.95);
-  state.currentImageDataUrl = dataUrl;
-  img.src = dataUrl;
-
-  setStatus("receiveStatus", "Foto aufgenommen.");
+  currentPhotoDataUrl = canvas.toDataURL("image/jpeg", 0.92);
+  els.photo.src = currentPhotoDataUrl;
+  els.photo.classList.remove("hidden");
+  els.photoPlaceholder.classList.add("hidden");
 }
 
-/* =========================
-   ZPL + Print
-========================= */
-
-function buildZPLLabel(pkg) {
-  const slot3 = padSlot(pkg.slot);
-  const name = sanitizeZPL(fullName(pkg));
-  const date = sanitizeZPL(formatDateDE(new Date(pkg.arrivalAt)));
-
-  return `^XA
-^CI28
-^PW800
-^LL800
-^FO40,70
-^A0N,420,420
-^FB720,1,0,C,0
-^FD${slot3}^FS
-^FO40,400
-^A0N,70,70
-^FB720,1,0,C,0
-^FD${name}^FS
-^FO40,660
-^A0N,55,55
-^FB720,1,0,C,0
-^FD${date}^FS
-^XZ`;
-}
-
-function sanitizeZPL(text) {
-  return String(text || "")
-    .replaceAll("\n", " ")
-    .replaceAll("\r", " ")
-    .trim();
-}
-
-async function printLabelForPackage(pkg) {
-  const mode = state.settings.printerMode;
-
-  if (mode === "label") {
-    const zpl = buildZPLLabel(pkg);
-    await sendLabelZPL(zpl);
-    return;
+async function runOCR() {
+  if (!currentPhotoDataUrl) {
+    throw new Error("Bitte zuerst ein Foto aufnehmen.");
   }
 
-  if (mode === "bluetooth") {
-    const zpl = buildZPLLabel(pkg);
-    await sendBluetooth(zpl);
-    return;
-  }
+  setStatus(els.acceptStatus, "OCR läuft ... bitte warten.");
 
-  await printHTMLLabel(pkg);
+  const result = await Tesseract.recognize(currentPhotoDataUrl, "deu+eng");
+  const text = (result?.data?.text || "").trim();
+  els.ocrText.value = text;
+
+  autoFillFromOCR(text);
+
+  setStatus(els.acceptStatus, "OCR abgeschlossen.");
 }
 
-async function sendLabelZPL(zpl) {
-  try {
-    if (state.settings.printerIP) {
-      throw new Error("Direkter TCP-Druck aus GitHub Pages geht nicht zuverlässig im Browser.");
+function autoFillFromOCR(text) {
+  const clean = String(text || "");
+
+  if (!els.trackingNumber.value) {
+    const trackingMatch =
+      clean.match(/\b\d{10,30}\b/) ||
+      clean.match(/\b[A-Z]{2}\d{9}[A-Z]{2}\b/) ||
+      clean.match(/\b[A-Z0-9]{12,30}\b/);
+
+    if (trackingMatch) {
+      els.trackingNumber.value = trackingMatch[0];
     }
+  }
 
-    await enqueuePendingPrint(zpl);
-    setStatus("receiveStatus", "ZPL erzeugt und in Warteschlange gespeichert.");
-  } catch (err) {
-    await enqueuePendingPrint(zpl);
-    throw new Error(err.message || "ZPL-Druck fehlgeschlagen. In Warteschlange gespeichert.");
+  if (!els.carrier.value) {
+    const map = ["DHL", "DPD", "GLS", "Hermes", "UPS", "FedEx"];
+    const found = map.find(name => clean.toLowerCase().includes(name.toLowerCase()));
+    if (found) {
+      els.carrier.value = found;
+    }
+  }
+
+  if (!els.recipient.value) {
+    const lines = clean
+      .split(/\r?\n/)
+      .map(v => v.trim())
+      .filter(Boolean);
+
+    const recipientLine = lines.find(line =>
+      !/\d{5}/.test(line) &&
+      !/(dhl|dpd|gls|hermes|ups|fedex|paket|sendung|tracking|label)/i.test(line) &&
+      line.length >= 4 &&
+      line.length <= 50
+    );
+
+    if (recipientLine) {
+      els.recipient.value = recipientLine;
+    }
   }
 }
 
-async function printHTMLLabel(pkg) {
-  const slot3 = padSlot(pkg.slot);
-  const popup = window.open("", "_blank", "width=800,height=600");
-
-  if (!popup) {
-    throw new Error("Druckfenster konnte nicht geöffnet werden.");
-  }
-
-  popup.document.write(`
-    <!DOCTYPE html>
-    <html lang="de">
-    <head>
-      <meta charset="UTF-8" />
-      <title>Druck ${slot3}</title>
-      <style>
-        body {
-          font-family: Arial, sans-serif;
-          margin: 0;
-          padding: 40px;
-          text-align: center;
-        }
-        .slot {
-          font-size: 160px;
-          font-weight: bold;
-          margin-top: 40px;
-        }
-        .name {
-          font-size: 32px;
-          margin-top: 30px;
-        }
-        .date {
-          font-size: 20px;
-          color: #666;
-          margin-top: 20px;
-        }
-      </style>
-    </head>
-    <body>
-      <div class="slot">${escapeHtml(slot3)}</div>
-      <div class="name">${escapeHtml(fullName(pkg))}</div>
-      <div class="date">${escapeHtml(formatDateDE(new Date(pkg.arrivalAt)))}</div>
-      <script>
-        window.onload = function() {
-          window.print();
-        };
-      </script>
-    </body>
-    </html>
-  `);
-
-  popup.document.close();
+function getFormData() {
+  return {
+    trackingNumber: els.trackingNumber.value.trim(),
+    carrier: els.carrier.value.trim(),
+    recipient: els.recipient.value.trim(),
+    storageLocation: els.storageLocation.value.trim(),
+    notes: els.notes.value.trim(),
+    ocrText: els.ocrText.value.trim(),
+    imageDataUrl: currentPhotoDataUrl || "",
+  };
 }
 
-/* =========================
-   Bluetooth (Web Bluetooth)
-========================= */
+function clearForm() {
+  els.trackingNumber.value = "";
+  els.carrier.value = "";
+  els.recipient.value = "";
+  els.storageLocation.value = "";
+  els.notes.value = "";
+  els.ocrText.value = "";
+  currentPhotoDataUrl = "";
+  els.photo.src = "";
+  els.photo.classList.add("hidden");
+  els.photoPlaceholder.classList.remove("hidden");
+  els.zplOutput.value = "";
+  setStatus(els.acceptStatus, "Formular geleert.");
+}
 
-async function connectBluetoothPrinter() {
-  if (!navigator.bluetooth) {
-    throw new Error("Web Bluetooth wird von diesem Browser nicht unterstützt.");
+async function savePackageFromForm() {
+  const data = getFormData();
+
+  if (!data.trackingNumber) {
+    throw new Error("Bitte eine Paketnummer eingeben oder per OCR erfassen.");
   }
 
-  const device = await navigator.bluetooth.requestDevice({
-    acceptAllDevices: true,
-    optionalServices: [
-      "battery_service",
-      "device_information",
-      "0000ffe0-0000-1000-8000-00805f9b34fb",
-      "6e400001-b5a3-f393-e0a9-e50e24dcca9e"
-    ]
+  const pkg = {
+    id: generateId(),
+    ...data,
+    createdAt: nowIso(),
+    updatedAt: nowIso()
+  };
+
+  await addPackage(pkg);
+  await saveInternalBackup("save");
+
+  els.zplOutput.value = buildZPL(pkg);
+  setStatus(els.acceptStatus, `Paket gespeichert: ${pkg.trackingNumber}`);
+  return pkg;
+}
+
+function renderPackages(items) {
+  if (!items.length) {
+    els.results.innerHTML = `<div class="placeholder">Keine Pakete gefunden</div>`;
+    return;
+  }
+
+  els.results.innerHTML = items.map(pkg => {
+    const thumb = pkg.imageDataUrl
+      ? `<img src="${pkg.imageDataUrl}" alt="Paketbild" style="max-width:160px;border-radius:12px;border:1px solid #ddd;margin-top:8px;">`
+      : "";
+
+    return `
+      <div class="package-item">
+        <h3>${escapeHtml(pkg.trackingNumber || "-")}</h3>
+        <div class="package-meta">
+          Eingang: ${escapeHtml(formatDateTime(pkg.createdAt))}
+        </div>
+        <div><strong>Empfänger:</strong> ${escapeHtml(pkg.recipient || "-")}</div>
+        <div><strong>Versanddienst:</strong> ${escapeHtml(pkg.carrier || "-")}</div>
+        <div><strong>Lagerplatz:</strong> ${escapeHtml(pkg.storageLocation || "-")}</div>
+        <div><strong>Notiz:</strong> ${escapeHtml(pkg.notes || "-")}</div>
+        ${thumb}
+        <div class="package-actions">
+          <button onclick="printPackageById('${pkg.id}')">Drucken</button>
+          <button onclick="fillFormById('${pkg.id}')">In Formular laden</button>
+          <button class="danger" onclick="removePackageById('${pkg.id}')">Löschen</button>
+        </div>
+      </div>
+    `;
+  }).join("");
+}
+
+async function searchPackages() {
+  const query = els.searchInput.value.trim().toLowerCase();
+  const carrier = els.searchCarrier.value.trim().toLowerCase();
+
+  const all = await getAllPackages();
+
+  const filtered = all.filter(pkg => {
+    const matchesQuery =
+      !query ||
+      [
+        pkg.trackingNumber,
+        pkg.recipient,
+        pkg.carrier,
+        pkg.storageLocation,
+        pkg.notes,
+        pkg.ocrText
+      ].some(v => String(v || "").toLowerCase().includes(query));
+
+    const matchesCarrier =
+      !carrier || String(pkg.carrier || "").toLowerCase() === carrier;
+
+    return matchesQuery && matchesCarrier;
   });
 
-  const server = await device.gatt.connect();
+  renderPackages(filtered);
+  setStatus(els.searchStatus, `${filtered.length} Paket(e) gefunden.`);
+}
 
-  const candidateServices = [
-    "0000ffe0-0000-1000-8000-00805f9b34fb",
-    "6e400001-b5a3-f393-e0a9-e50e24dcca9e"
-  ];
+async function showAllPackages() {
+  const all = await getAllPackages();
+  renderPackages(all);
+  setStatus(els.searchStatus, `${all.length} Paket(e) geladen.`);
+}
 
-  const candidateCharacteristics = [
-    "0000ffe1-0000-1000-8000-00805f9b34fb",
-    "6e400002-b5a3-f393-e0a9-e50e24dcca9e"
-  ];
+function loadPackageIntoForm(pkg) {
+  els.trackingNumber.value = pkg.trackingNumber || "";
+  els.carrier.value = pkg.carrier || "";
+  els.recipient.value = pkg.recipient || "";
+  els.storageLocation.value = pkg.storageLocation || "";
+  els.notes.value = pkg.notes || "";
+  els.ocrText.value = pkg.ocrText || "";
+  currentPhotoDataUrl = pkg.imageDataUrl || "";
 
-  let characteristic = null;
+  if (currentPhotoDataUrl) {
+    els.photo.src = currentPhotoDataUrl;
+    els.photo.classList.remove("hidden");
+    els.photoPlaceholder.classList.add("hidden");
+  } else {
+    els.photo.src = "";
+    els.photo.classList.add("hidden");
+    els.photoPlaceholder.classList.remove("hidden");
+  }
 
-  for (const serviceUuid of candidateServices) {
+  els.zplOutput.value = buildZPL(pkg);
+  switchTab("annahme");
+  setStatus(els.acceptStatus, `Paket ${pkg.trackingNumber} in Formular geladen.`);
+}
+
+async function getPackageById(id) {
+  const items = await getAllPackages();
+  return items.find(x => x.id === id) || null;
+}
+
+async function printPackage(pkg) {
+  els.printLabel.innerHTML = buildPrintHtml(pkg);
+  els.printLabel.classList.remove("hidden");
+  els.zplOutput.value = buildZPL(pkg);
+
+  window.print();
+
+  setTimeout(() => {
+    els.printLabel.classList.add("hidden");
+  }, 500);
+}
+
+async function exportBackupFile() {
+  const packages = await getAllPackages();
+  const payload = {
+    app: "lagerwirtschaft",
+    version: 1,
+    exportedAt: nowIso(),
+    packages
+  };
+
+  const blob = new Blob([JSON.stringify(payload, null, 2)], {
+    type: "application/json"
+  });
+
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `lager_backup_${new Date().toISOString().replaceAll(":", "-")}.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+
+  setStatus(els.searchStatus, "Backup exportiert.");
+}
+
+async function importBackupFile(file) {
+  const text = await file.text();
+  const data = JSON.parse(text);
+
+  if (!data || !Array.isArray(data.packages)) {
+    throw new Error("Ungültige Backup-Datei.");
+  }
+
+  await restoreBackupData({ packages: data.packages });
+  await showAllPackages();
+
+  setStatus(els.searchStatus, `${data.packages.length} Paket(e) importiert.`);
+}
+
+async function restoreLatestInternalBackup() {
+  const backup = await getLatestInternalBackup();
+
+  if (!backup) {
+    throw new Error("Kein internes Backup gefunden.");
+  }
+
+  await restoreBackupData(backup);
+  await showAllPackages();
+  setStatus(
+    els.searchStatus,
+    `Backup wiederhergestellt vom ${formatDateTime(backup.createdAt)}.`
+  );
+}
+
+async function checkBluetoothSupport() {
+  const available = "bluetooth" in navigator;
+
+  if (!available) {
+    els.bluetoothStatus.textContent =
+      "Web Bluetooth wird in diesem Browser nicht unterstützt.";
+    return;
+  }
+
+  try {
+    await navigator.bluetooth.getAvailability();
+    els.bluetoothStatus.textContent =
+      "Web Bluetooth ist grundsätzlich vorhanden. Direkter Druck hängt aber vom Browser und vom Druckerprofil ab.";
+  } catch {
+    els.bluetoothStatus.textContent =
+      "Bluetooth-API vorhanden, Verfügbarkeit konnte aber nicht sicher geprüft werden.";
+  }
+}
+
+function startHourlyBackup() {
+  setInterval(async () => {
     try {
-      const service = await server.getPrimaryService(serviceUuid);
-      for (const chUuid of candidateCharacteristics) {
-        try {
-          characteristic = await service.getCharacteristic(chUuid);
-          if (characteristic) break;
-        } catch {}
-      }
-      if (characteristic) break;
-    } catch {}
-  }
-
-  if (!characteristic) {
-    throw new Error("Keine passende Bluetooth-Write-Characteristic gefunden.");
-  }
-
-  state.bluetoothDevice = device;
-  state.bluetoothCharacteristic = characteristic;
-
-  state.settings.bluetoothDeviceName = device.name || "";
-  state.settings.bluetoothDeviceIdentifier = device.id || "";
-  saveSettings(state.settings);
-
-  setStatus("settingsStatus", `Bluetooth verbunden: ${device.name || "Unbekannt"}`);
+      await saveInternalBackup("hourly");
+      console.log("Stündliches Backup erstellt.");
+    } catch (error) {
+      console.error("Backup-Fehler:", error);
+    }
+  }, 60 * 60 * 1000);
 }
 
-async function sendBluetooth(payload) {
-  if (!navigator.bluetooth) {
-    throw new Error("Web Bluetooth nicht verfügbar.");
+async function startupRestoreIfNeeded() {
+  const packages = await getAllPackages();
+
+  if (packages.length > 0) {
+    return;
   }
 
-  if (!state.bluetoothCharacteristic) {
-    throw new Error("Kein Bluetooth-Drucker verbunden.");
+  const backup = await getLatestInternalBackup();
+  if (backup && Array.isArray(backup.packages) && backup.packages.length > 0) {
+    await restoreBackupData(backup);
   }
+}
 
-  const encoder = new TextEncoder();
-  const data = encoder.encode(payload);
-
-  const chunkSize = 180;
-  for (let i = 0; i < data.length; i += chunkSize) {
-    const chunk = data.slice(i, i + chunkSize);
-    await state.bluetoothCharacteristic.writeValue(chunk);
+window.printPackageById = async function printPackageById(id) {
+  try {
+    const pkg = await getPackageById(id);
+    if (!pkg) throw new Error("Paket nicht gefunden.");
+    await printPackage(pkg);
+  } catch (error) {
+    alert(error.message || String(error));
   }
+};
 
-  setStatus("receiveStatus", "Bluetooth-Druck gesendet.");
-}
+window.fillFormById = async function fillFormById(id) {
+  try {
+    const pkg = await getPackageById(id);
+    if (!pkg) throw new Error("Paket nicht gefunden.");
+    loadPackageIntoForm(pkg);
+  } catch (error) {
+    alert(error.message || String(error));
+  }
+};
 
-/* =========================
-   Settings
-========================= */
+window.removePackageById = async function removePackageById(id) {
+  try {
+    const pkg = await getPackageById(id);
+    if (!pkg) throw new Error("Paket nicht gefunden.");
 
-function loadSettingsIntoForm() {
-  if ($("printerMode")) $("printerMode").value = state.settings.printerMode;
-  if ($("printerIP")) $("printerIP").value = state.settings.printerIP;
-  if ($("printerPort")) $("printerPort").value = state.settings.printerPort;
-  if ($("bluetoothDeviceIdentifier")) $("bluetoothDeviceIdentifier").value = state.settings.bluetoothDeviceIdentifier;
-  if ($("bluetoothDeviceName")) $("bluetoothDeviceName").value = state.settings.bluetoothDeviceName;
-}
+    const ok = confirm(`Paket ${pkg.trackingNumber} wirklich löschen?`);
+    if (!ok) return;
 
-function saveSettingsFromForm() {
-  state.settings = {
-    ...state.settings,
-    printerMode: $("printerMode")?.value || "label",
-    printerIP: $("printerIP")?.value.trim() || "",
-    printerPort: Number($("printerPort")?.value || 9100),
-    bluetoothDeviceIdentifier: $("bluetoothDeviceIdentifier")?.value.trim() || "",
-    bluetoothDeviceName: $("bluetoothDeviceName")?.value.trim() || state.settings.bluetoothDeviceName || ""
-  };
-
-  saveSettings(state.settings);
-  setStatus("settingsStatus", "Einstellungen gespeichert.");
-}
-
-async function runTestPrint() {
-  const fakePkg = {
-    id: crypto.randomUUID(),
-    slot: 123,
-    firstName: "Test",
-    lastName: "Mustermann",
-    street: "Musterstraße",
-    houseNo: "1",
-    postalCode: "12345",
-    city: "Berlin",
-    arrivalAt: new Date().toISOString()
-  };
-
-  await printLabelForPackage(fakePkg);
-}
-
-/* =========================
-   Event Binding
-========================= */
+    await deletePackage(id);
+    await saveInternalBackup("delete");
+    await showAllPackages();
+    setStatus(els.searchStatus, `Paket ${pkg.trackingNumber} gelöscht.`);
+  } catch (error) {
+    alert(error.message || String(error));
+  }
+};
 
 function bindEvents() {
-  document.querySelectorAll(".tab").forEach(btn => {
+  els.tabs.forEach(btn => {
     btn.addEventListener("click", () => switchTab(btn.dataset.tab));
   });
 
-  $("saveBtn")?.addEventListener("click", async () => {
-    try {
-      const fields = readReceiveForm();
-      const pkg = await createPackage(fields);
-      setStatus("receiveStatus", `Gespeichert: Paket #${padSlot(pkg.slot)}`);
-      clearReceiveForm();
-      renderResults();
-    } catch (err) {
-      setStatus("receiveStatus", err.message || "Fehler beim Speichern.", true);
-    }
-  });
-
-  $("clearBtn")?.addEventListener("click", () => {
-    clearReceiveForm();
-    setStatus("receiveStatus", "");
-  });
-
-  $("searchQuery")?.addEventListener("input", e => {
-    state.searchQuery = e.target.value;
-    renderResults();
-  });
-
-  $("sortBy")?.addEventListener("change", e => {
-    state.sortBy = e.target.value;
-    renderResults();
-  });
-
-  $("sortAscending")?.addEventListener("change", e => {
-    state.sortAscending = e.target.checked;
-    renderResults();
-  });
-
-  $("saveSettingsBtn")?.addEventListener("click", saveSettingsFromForm);
-
-  $("testPrintBtn")?.addEventListener("click", async () => {
-    try {
-      await runTestPrint();
-      setStatus("settingsStatus", "Testdruck gestartet.");
-    } catch (err) {
-      setStatus("settingsStatus", err.message || "Testdruck fehlgeschlagen.", true);
-    }
-  });
-
-  $("connectBluetoothBtn")?.addEventListener("click", async () => {
-    try {
-      await connectBluetoothPrinter();
-    } catch (err) {
-      setStatus("settingsStatus", err.message || "Bluetooth-Verbindung fehlgeschlagen.", true);
-    }
-  });
-
-  $("startCameraBtn")?.addEventListener("click", async () => {
+  els.startCameraBtn.addEventListener("click", async () => {
     try {
       await startCamera();
-    } catch (err) {
-      setStatus("receiveStatus", err.message || "Kamera konnte nicht gestartet werden.", true);
+      setStatus(els.acceptStatus, "Kamera gestartet.");
+    } catch (error) {
+      setStatus(els.acceptStatus, `Kamera-Fehler: ${error.message || error}`);
     }
   });
 
-  $("stopCameraBtn")?.addEventListener("click", () => {
+  els.stopCameraBtn.addEventListener("click", () => {
     stopCamera();
-    setStatus("receiveStatus", "Kamera gestoppt.");
+    setStatus(els.acceptStatus, "Kamera gestoppt.");
   });
 
-  $("capturePhotoBtn")?.addEventListener("click", () => {
+  els.takePhotoBtn.addEventListener("click", () => {
     try {
-      capturePhoto();
-    } catch (err) {
-      setStatus("receiveStatus", err.message || "Foto fehlgeschlagen.", true);
+      takePhoto();
+      setStatus(els.acceptStatus, "Foto aufgenommen.");
+    } catch (error) {
+      setStatus(els.acceptStatus, `Foto-Fehler: ${error.message || error}`);
     }
   });
 
-  $("runOCRBtn")?.addEventListener("click", async () => {
+  els.ocrBtn.addEventListener("click", async () => {
     try {
-      await runOCRFromCurrentImage();
-    } catch (err) {
-      setStatus("receiveStatus", err.message || "OCR fehlgeschlagen.", true);
+      await runOCR();
+    } catch (error) {
+      setStatus(els.acceptStatus, `OCR-Fehler: ${error.message || error}`);
     }
   });
 
-  window.addEventListener("beforeunload", stopCamera);
+  els.saveBtn.addEventListener("click", async () => {
+    try {
+      const pkg = await savePackageFromForm();
+      await showAllPackages();
+      els.zplOutput.value = buildZPL(pkg);
+    } catch (error) {
+      setStatus(els.acceptStatus, `Speicher-Fehler: ${error.message || error}`);
+    }
+  });
+
+  els.printBtn.addEventListener("click", async () => {
+    try {
+      const data = getFormData();
+
+      if (!data.trackingNumber) {
+        throw new Error("Bitte zuerst Paketdaten eingeben.");
+      }
+
+      const pkg = {
+        ...data,
+        createdAt: nowIso()
+      };
+
+      els.zplOutput.value = buildZPL(pkg);
+      await printPackage(pkg);
+      setStatus(els.acceptStatus, "Druckdialog geöffnet.");
+    } catch (error) {
+      setStatus(els.acceptStatus, `Druck-Fehler: ${error.message || error}`);
+    }
+  });
+
+  els.clearBtn.addEventListener("click", clearForm);
+
+  els.searchBtn.addEventListener("click", async () => {
+    try {
+      await searchPackages();
+    } catch (error) {
+      setStatus(els.searchStatus, `Suche-Fehler: ${error.message || error}`);
+    }
+  });
+
+  els.showAllBtn.addEventListener("click", async () => {
+    try {
+      await showAllPackages();
+    } catch (error) {
+      setStatus(els.searchStatus, `Fehler: ${error.message || error}`);
+    }
+  });
+
+  els.exportBtn.addEventListener("click", async () => {
+    try {
+      await exportBackupFile();
+    } catch (error) {
+      setStatus(els.searchStatus, `Export-Fehler: ${error.message || error}`);
+    }
+  });
+
+  els.importBtn.addEventListener("click", () => {
+    els.importFile.click();
+  });
+
+  els.importFile.addEventListener("change", async event => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      await importBackupFile(file);
+    } catch (error) {
+      setStatus(els.searchStatus, `Import-Fehler: ${error.message || error}`);
+    } finally {
+      event.target.value = "";
+    }
+  });
+
+  els.forceBackupBtn.addEventListener("click", async () => {
+    try {
+      const backup = await saveInternalBackup("manual");
+      els.bluetoothStatus.textContent = `Letztes Backup: ${formatDateTime(backup.createdAt)}`;
+    } catch (error) {
+      els.bluetoothStatus.textContent = `Backup-Fehler: ${error.message || error}`;
+    }
+  });
+
+  els.restoreBackupBtn.addEventListener("click", async () => {
+    try {
+      await restoreLatestInternalBackup();
+    } catch (error) {
+      els.bluetoothStatus.textContent = `Restore-Fehler: ${error.message || error}`;
+    }
+  });
+
+  els.deleteAllBtn.addEventListener("click", async () => {
+    const ok = confirm("Wirklich alle Pakete löschen?");
+    if (!ok) return;
+
+    try {
+      await clearPackages();
+      await saveInternalBackup("clear_all");
+      await showAllPackages();
+      setStatus(els.searchStatus, "Alle Pakete gelöscht.");
+    } catch (error) {
+      setStatus(els.searchStatus, `Lösch-Fehler: ${error.message || error}`);
+    }
+  });
+
+  els.checkBluetoothBtn.addEventListener("click", async () => {
+    await checkBluetoothSupport();
+  });
+
+  window.addEventListener("beforeunload", () => {
+    try {
+      const draft = {
+        trackingNumber: els.trackingNumber.value,
+        carrier: els.carrier.value,
+        recipient: els.recipient.value,
+        storageLocation: els.storageLocation.value,
+        notes: els.notes.value,
+        ocrText: els.ocrText.value,
+        imageDataUrl: currentPhotoDataUrl
+      };
+      localStorage.setItem("lagerwirtschaft_draft", JSON.stringify(draft));
+    } catch {}
+  });
 }
 
-/* =========================
-   Init
-========================= */
-
-async function init() {
-  state.settings = loadSettings();
-  state.db = await openDB();
-  await loadPackagesFromDB();
-
-  loadSettingsIntoForm();
-  bindEvents();
-  renderResults();
+async function restoreDraft() {
+  const raw = localStorage.getItem("lagerwirtschaft_draft");
+  if (!raw) return;
 
   try {
-    const count = await pendingPrintCount();
-    if (count > 0) {
-      setStatus("settingsStatus", `${count} Druckauftrag/-aufträge in Warteschlange.`);
+    const draft = JSON.parse(raw);
+
+    els.trackingNumber.value = draft.trackingNumber || "";
+    els.carrier.value = draft.carrier || "";
+    els.recipient.value = draft.recipient || "";
+    els.storageLocation.value = draft.storageLocation || "";
+    els.notes.value = draft.notes || "";
+    els.ocrText.value = draft.ocrText || "";
+    currentPhotoDataUrl = draft.imageDataUrl || "";
+
+    if (currentPhotoDataUrl) {
+      els.photo.src = currentPhotoDataUrl;
+      els.photo.classList.remove("hidden");
+      els.photoPlaceholder.classList.add("hidden");
     }
   } catch {}
 }
 
-document.addEventListener("DOMContentLoaded", () => {
-  init().catch(err => {
-    console.error(err);
-    alert("Initialisierung fehlgeschlagen: " + (err.message || err));
-  });
-});
+async function init() {
+  try {
+    await openDatabase();
+    bindEvents();
+    await startupRestoreIfNeeded();
+    await restoreDraft();
+    await showAllPackages();
+    await saveInternalBackup("startup");
+    startHourlyBackup();
+
+    setStatus(els.acceptStatus, "App bereit.");
+  } catch (error) {
+    setStatus(els.acceptStatus, `Startfehler: ${error.message || error}`);
+  }
+}
+
+init();
