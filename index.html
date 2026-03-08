@@ -11,12 +11,13 @@
   <div class="app">
     <header class="topbar">
       <h1>Lagerwirtschaft</h1>
+      <p class="subtitle">Paketannahme, Suche, OCR, Druck und lokale Speicherung</p>
     </header>
 
     <nav class="tabs">
-      <button class="tab active" data-tab="receive">Annahme</button>
-      <button class="tab" data-tab="search">Suche</button>
-      <button class="tab" data-tab="settings">Einstellungen</button>
+      <button class="tab active" data-tab="receive" type="button">Annahme</button>
+      <button class="tab" data-tab="search" type="button">Suche</button>
+      <button class="tab" data-tab="settings" type="button">Einstellungen</button>
     </nav>
 
     <main>
@@ -24,20 +25,40 @@
         <div class="card">
           <h2>Paket annehmen</h2>
 
+          <div class="camera-box">
+            <video id="cameraVideo" playsinline autoplay muted></video>
+            <canvas id="cameraCanvas" hidden></canvas>
+            <img id="capturedImage" alt="Aufgenommenes Bild" />
+          </div>
+
+          <div class="actions wrap">
+            <button id="startCameraBtn" type="button">Kamera starten</button>
+            <button id="stopCameraBtn" type="button">Kamera stoppen</button>
+            <button id="capturePhotoBtn" type="button">Foto aufnehmen</button>
+            <button id="runOCRBtn" type="button">OCR starten</button>
+          </div>
+
+          <div class="ocr-box">
+            <label>
+              <span>OCR Rohtext</span>
+              <pre id="ocrRawText" class="ocr-raw"></pre>
+            </label>
+          </div>
+
           <div class="grid">
             <label>
               <span>Vorname</span>
-              <input id="firstName" type="text" />
+              <input id="firstName" type="text" autocomplete="given-name" />
             </label>
 
             <label>
               <span>Nachname</span>
-              <input id="lastName" type="text" />
+              <input id="lastName" type="text" autocomplete="family-name" />
             </label>
 
             <label class="full">
               <span>Straße</span>
-              <input id="street" type="text" />
+              <input id="street" type="text" autocomplete="address-line1" />
             </label>
 
             <label>
@@ -47,17 +68,17 @@
 
             <label>
               <span>PLZ</span>
-              <input id="postalCode" type="text" inputmode="numeric" />
+              <input id="postalCode" type="text" inputmode="numeric" autocomplete="postal-code" />
             </label>
 
             <label class="full">
               <span>Ort</span>
-              <input id="city" type="text" />
+              <input id="city" type="text" autocomplete="address-level2" />
             </label>
           </div>
 
           <div class="actions">
-            <button id="saveBtn" class="primary">Speichern</button>
+            <button id="saveBtn" class="primary" type="button">Speichern</button>
             <button id="clearBtn" type="button">Leeren</button>
           </div>
 
@@ -71,7 +92,7 @@
 
           <label>
             <span>Name oder Adresse</span>
-            <input id="searchQuery" type="text" placeholder="z. B. Meier oder Musterstraße" />
+            <input id="searchQuery" type="text" placeholder="z. B. Meier oder Hauptstraße" />
           </label>
 
           <div class="search-toolbar">
@@ -102,7 +123,7 @@
               <span>Druckmodus</span>
               <select id="printerMode">
                 <option value="label">Labeldrucker (ZPL)</option>
-                <option value="airPrint">Normaler Drucker</option>
+                <option value="airPrint">Normaler Drucker / Browser-Druck</option>
                 <option value="bluetooth">Bluetooth-Drucker</option>
               </select>
             </label>
@@ -114,7 +135,12 @@
 
             <label>
               <span>Port</span>
-              <input id="printerPort" type="number" placeholder="9100" />
+              <input id="printerPort" type="number" value="9100" />
+            </label>
+
+            <label class="full">
+              <span>Bluetooth Gerätename</span>
+              <input id="bluetoothDeviceName" type="text" />
             </label>
 
             <label class="full">
@@ -123,8 +149,18 @@
             </label>
           </div>
 
-          <div class="actions">
-            <button id="saveSettingsBtn" class="primary">Einstellungen speichern</button>
+          <div class="actions wrap">
+            <button id="saveSettingsBtn" class="primary" type="button">Einstellungen speichern</button>
+            <button id="connectBluetoothBtn" type="button">Bluetooth verbinden</button>
+            <button id="testPrintBtn" type="button">Testdruck</button>
+          </div>
+
+          <div class="info-box">
+            <p><strong>Hinweise:</strong></p>
+            <p>Bluetooth funktioniert nur, wenn dein Browser Web Bluetooth unterstützt.</p>
+            <p>Auf iPhone/Safari ist Bluetooth im Browser oft eingeschränkt.</p>
+            <p>Browser-Druck ist der Web-Ersatz für AirPrint.</p>
+            <p>ZPL wird bei fehlender Direktverbindung in der Warteschlange gespeichert.</p>
           </div>
 
           <p id="settingsStatus" class="status"></p>
@@ -132,20 +168,6 @@
       </section>
     </main>
   </div>
-
-  <template id="resultItemTemplate">
-    <article class="result-item">
-      <div class="result-number"></div>
-      <div class="result-body">
-        <div class="result-name"></div>
-        <div class="result-address"></div>
-        <div class="result-date"></div>
-      </div>
-      <div class="result-actions">
-        <button class="danger delete-btn">Löschen</button>
-      </div>
-    </article>
-  </template>
 
   <script src="app.js"></script>
 </body>
