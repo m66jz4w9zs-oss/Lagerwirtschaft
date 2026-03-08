@@ -2,173 +2,448 @@
 <html lang="de">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1, viewport-fit=cover"
+  />
   <title>Lagerwirtschaft</title>
-  <meta name="theme-color" content="#ffffff" />
-  <link rel="stylesheet" href="style.css" />
+
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+
+  <style>
+    :root {
+      --bg: #f4f4f5;
+      --card: #ffffff;
+      --border: #d9d9de;
+      --text: #111111;
+      --muted: #6b6b73;
+      --blue: #3b82f6;
+      --black: #111111;
+      --danger: #c62828;
+      --ok: #0f9d58;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    .app {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 24px 16px 40px;
+    }
+
+    h1 {
+      font-size: 46px;
+      line-height: 1;
+      margin: 18px 0 8px;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+    }
+
+    .subtitle {
+      font-size: 18px;
+      color: var(--muted);
+      margin-bottom: 20px;
+    }
+
+    .tabs {
+      display: flex;
+      gap: 14px;
+      flex-wrap: wrap;
+      margin-bottom: 22px;
+    }
+
+    .tab-btn,
+    button,
+    input,
+    textarea,
+    select {
+      font: inherit;
+    }
+
+    .tab-btn {
+      border: 2px solid var(--border);
+      background: #fff;
+      color: var(--blue);
+      padding: 14px 26px;
+      border-radius: 18px;
+      cursor: pointer;
+    }
+
+    .tab-btn.active {
+      background: var(--black);
+      color: #fff;
+      border-color: var(--black);
+    }
+
+    .card {
+      background: var(--card);
+      border: 2px solid var(--border);
+      border-radius: 26px;
+      padding: 24px;
+      margin-bottom: 18px;
+    }
+
+    .card h2 {
+      margin: 0 0 22px;
+      font-size: 34px;
+      line-height: 1.1;
+    }
+
+    .field {
+      margin-bottom: 16px;
+    }
+
+    .field label {
+      display: block;
+      font-size: 16px;
+      margin-bottom: 8px;
+    }
+
+    .field input,
+    .field textarea,
+    .field select {
+      width: 100%;
+      border: 2px solid var(--border);
+      border-radius: 18px;
+      padding: 14px 16px;
+      background: #fff;
+      outline: none;
+    }
+
+    .field textarea {
+      min-height: 120px;
+      resize: vertical;
+    }
+
+    .preview-box,
+    .photo-box,
+    .ocr-box,
+    .list-box {
+      border: 2px solid var(--border);
+      border-radius: 24px;
+      background: #f0f0f1;
+      overflow: hidden;
+    }
+
+    .preview-box {
+      min-height: 240px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    video, img {
+      width: 100%;
+      display: block;
+    }
+
+    .placeholder {
+      color: var(--muted);
+      padding: 40px 16px;
+      text-align: center;
+    }
+
+    .button-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 14px;
+      margin: 18px 0;
+    }
+
+    button {
+      width: 100%;
+      border: 2px solid var(--border);
+      background: #fff;
+      color: var(--blue);
+      border-radius: 18px;
+      padding: 16px 18px;
+      cursor: pointer;
+    }
+
+    button.primary {
+      background: var(--black);
+      border-color: var(--black);
+      color: #fff;
+    }
+
+    button.danger {
+      color: var(--danger);
+    }
+
+    button.success {
+      color: var(--ok);
+    }
+
+    .status {
+      margin: 10px 0 16px;
+      padding: 12px 14px;
+      border-radius: 14px;
+      background: #fff;
+      border: 2px solid var(--border);
+      color: var(--muted);
+      white-space: pre-wrap;
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+
+    .package-item {
+      border: 2px solid var(--border);
+      border-radius: 18px;
+      padding: 14px;
+      margin-bottom: 12px;
+      background: #fff;
+    }
+
+    .package-item h3 {
+      margin: 0 0 8px;
+      font-size: 20px;
+    }
+
+    .package-meta {
+      color: var(--muted);
+      font-size: 14px;
+      margin-bottom: 8px;
+    }
+
+    .package-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 10px;
+    }
+
+    .package-actions button {
+      width: auto;
+      min-width: 130px;
+      padding: 10px 14px;
+    }
+
+    .small {
+      font-size: 14px;
+      color: var(--muted);
+    }
+
+    .print-area {
+      background: white;
+      color: black;
+      padding: 20px;
+      border: 1px solid #ccc;
+      border-radius: 14px;
+    }
+
+    .mono {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    @media (max-width: 640px) {
+      h1 { font-size: 34px; }
+      .card h2 { font-size: 28px; }
+      .row { grid-template-columns: 1fr; }
+    }
+
+    @media print {
+      body * {
+        visibility: hidden;
+      }
+      #printLabel, #printLabel * {
+        visibility: visible;
+      }
+      #printLabel {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 100%;
+        border: none;
+        padding: 24px;
+      }
+    }
+  </style>
 </head>
 <body>
   <div class="app">
-    <header class="topbar">
-      <h1>Lagerwirtschaft</h1>
-      <p class="subtitle">Paketannahme, Suche, OCR, Druck und lokale Speicherung</p>
-    </header>
+    <h1>Lagerwirtschaft</h1>
+    <div class="subtitle">Paketannahme, Suche, OCR, Druck und lokale Speicherung</div>
 
-    <nav class="tabs">
-      <button class="tab active" data-tab="receive" type="button">Annahme</button>
-      <button class="tab" data-tab="search" type="button">Suche</button>
-      <button class="tab" data-tab="settings" type="button">Einstellungen</button>
-    </nav>
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="annahme">Annahme</button>
+      <button class="tab-btn" data-tab="suche">Suche</button>
+      <button class="tab-btn" data-tab="einstellungen">Einstellungen</button>
+    </div>
 
-    <main>
-      <section id="tab-receive" class="tab-panel active">
-        <div class="card">
-          <h2>Paket annehmen</h2>
+    <section id="tab-annahme" class="tab-panel">
+      <div class="card">
+        <h2>Paket annehmen</h2>
 
-          <div class="camera-box">
-            <video id="cameraVideo" playsinline autoplay muted></video>
-            <canvas id="cameraCanvas" hidden></canvas>
-            <img id="capturedImage" alt="Aufgenommenes Bild" />
+        <div class="preview-box">
+          <video id="camera" autoplay playsinline muted class="hidden"></video>
+          <div id="cameraPlaceholder" class="placeholder">Kamera-Vorschau</div>
+        </div>
+
+        <div class="field" style="margin-top:18px;">
+          <label>Aufgenommenes Bild</label>
+          <div class="photo-box">
+            <img id="photo" alt="Aufgenommenes Bild" class="hidden" />
+            <div id="photoPlaceholder" class="placeholder">Noch kein Foto aufgenommen</div>
           </div>
+        </div>
 
-          <div class="actions wrap">
-            <button id="startCameraBtn" type="button">Kamera starten</button>
-            <button id="stopCameraBtn" type="button">Kamera stoppen</button>
-            <button id="capturePhotoBtn" type="button">Foto aufnehmen</button>
-            <button id="runOCRBtn" type="button">OCR starten</button>
-          </div>
+        <div class="button-grid">
+          <button id="startCameraBtn">Kamera starten</button>
+          <button id="stopCameraBtn">Kamera stoppen</button>
+          <button id="takePhotoBtn">Foto aufnehmen</button>
+          <button id="ocrBtn">OCR starten</button>
+        </div>
 
+        <div class="field">
+          <label>OCR Rohtext</label>
           <div class="ocr-box">
-            <label>
-              <span>OCR Rohtext</span>
-              <pre id="ocrRawText" class="ocr-raw"></pre>
-            </label>
+            <textarea id="ocrText" placeholder="Hier erscheint der erkannte Text"></textarea>
           </div>
-
-          <div class="grid">
-            <label>
-              <span>Vorname</span>
-              <input id="firstName" type="text" autocomplete="given-name" />
-            </label>
-
-            <label>
-              <span>Nachname</span>
-              <input id="lastName" type="text" autocomplete="family-name" />
-            </label>
-
-            <label class="full">
-              <span>Straße</span>
-              <input id="street" type="text" autocomplete="address-line1" />
-            </label>
-
-            <label>
-              <span>Hausnr.</span>
-              <input id="houseNo" type="text" />
-            </label>
-
-            <label>
-              <span>PLZ</span>
-              <input id="postalCode" type="text" inputmode="numeric" autocomplete="postal-code" />
-            </label>
-
-            <label class="full">
-              <span>Ort</span>
-              <input id="city" type="text" autocomplete="address-level2" />
-            </label>
-          </div>
-
-          <div class="actions">
-            <button id="saveBtn" class="primary" type="button">Speichern</button>
-            <button id="clearBtn" type="button">Leeren</button>
-          </div>
-
-          <p id="receiveStatus" class="status"></p>
         </div>
-      </section>
 
-      <section id="tab-search" class="tab-panel">
-        <div class="card">
-          <h2>Paket finden</h2>
-
-          <label>
-            <span>Name oder Adresse</span>
-            <input id="searchQuery" type="text" placeholder="z. B. Meier oder Hauptstraße" />
-          </label>
-
-          <div class="search-toolbar">
-            <label>
-              <span>Sortieren nach</span>
-              <select id="sortBy">
-                <option value="arrival">Ankunft</option>
-                <option value="number">Nummer</option>
-              </select>
-            </label>
-
-            <label class="checkbox-row">
-              <input id="sortAscending" type="checkbox" />
-              <span>Aufsteigend</span>
-            </label>
+        <div class="row">
+          <div class="field">
+            <label for="trackingNumber">Paketnummer</label>
+            <input id="trackingNumber" type="text" placeholder="z. B. 00340434123456789012" />
           </div>
-
-          <div id="results" class="list"></div>
+          <div class="field">
+            <label for="carrier">Versanddienst</label>
+            <select id="carrier">
+              <option value="">Bitte wählen</option>
+              <option>DHL</option>
+              <option>DPD</option>
+              <option>GLS</option>
+              <option>Hermes</option>
+              <option>UPS</option>
+              <option>FedEx</option>
+              <option>Sonstiges</option>
+            </select>
+          </div>
         </div>
-      </section>
 
-      <section id="tab-settings" class="tab-panel">
-        <div class="card">
-          <h2>Einstellungen</h2>
-
-          <div class="grid">
-            <label class="full">
-              <span>Druckmodus</span>
-              <select id="printerMode">
-                <option value="label">Labeldrucker (ZPL)</option>
-                <option value="airPrint">Normaler Drucker / Browser-Druck</option>
-                <option value="bluetooth">Bluetooth-Drucker</option>
-              </select>
-            </label>
-
-            <label>
-              <span>Drucker IP</span>
-              <input id="printerIP" type="text" placeholder="192.168.1.50" />
-            </label>
-
-            <label>
-              <span>Port</span>
-              <input id="printerPort" type="number" value="9100" />
-            </label>
-
-            <label class="full">
-              <span>Bluetooth Gerätename</span>
-              <input id="bluetoothDeviceName" type="text" />
-            </label>
-
-            <label class="full">
-              <span>Bluetooth Geräte-ID</span>
-              <input id="bluetoothDeviceIdentifier" type="text" />
-            </label>
+        <div class="row">
+          <div class="field">
+            <label for="recipient">Empfänger</label>
+            <input id="recipient" type="text" placeholder="Name des Empfängers" />
           </div>
-
-          <div class="actions wrap">
-            <button id="saveSettingsBtn" class="primary" type="button">Einstellungen speichern</button>
-            <button id="connectBluetoothBtn" type="button">Bluetooth verbinden</button>
-            <button id="testPrintBtn" type="button">Testdruck</button>
+          <div class="field">
+            <label for="storageLocation">Lagerplatz</label>
+            <input id="storageLocation" type="text" placeholder="z. B. Regal A3 / Fach 12" />
           </div>
-
-          <div class="info-box">
-            <p><strong>Hinweise:</strong></p>
-            <p>Bluetooth funktioniert nur, wenn dein Browser Web Bluetooth unterstützt.</p>
-            <p>Auf iPhone/Safari ist Bluetooth im Browser oft eingeschränkt.</p>
-            <p>Browser-Druck ist der Web-Ersatz für AirPrint.</p>
-            <p>ZPL wird bei fehlender Direktverbindung in der Warteschlange gespeichert.</p>
-          </div>
-
-          <p id="settingsStatus" class="status"></p>
         </div>
-      </section>
-    </main>
+
+        <div class="field">
+          <label for="notes">Notizen</label>
+          <textarea id="notes" placeholder="Zusätzliche Hinweise"></textarea>
+        </div>
+
+        <div class="button-grid">
+          <button id="saveBtn" class="primary">Paket speichern</button>
+          <button id="printBtn" class="success">Label drucken (AirPrint / Druckdialog)</button>
+          <button id="clearBtn" class="danger">Formular leeren</button>
+        </div>
+
+        <div id="acceptStatus" class="status">Bereit.</div>
+      </div>
+    </section>
+
+    <section id="tab-suche" class="tab-panel hidden">
+      <div class="card">
+        <h2>Pakete suchen</h2>
+
+        <div class="row">
+          <div class="field">
+            <label for="searchInput">Suche</label>
+            <input id="searchInput" type="text" placeholder="Paketnummer, Empfänger, Lagerplatz, Notiz ..." />
+          </div>
+          <div class="field">
+            <label for="searchCarrier">Versanddienst filtern</label>
+            <select id="searchCarrier">
+              <option value="">Alle</option>
+              <option>DHL</option>
+              <option>DPD</option>
+              <option>GLS</option>
+              <option>Hermes</option>
+              <option>UPS</option>
+              <option>FedEx</option>
+              <option>Sonstiges</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="button-grid">
+          <button id="searchBtn">Suche starten</button>
+          <button id="showAllBtn">Alle Pakete anzeigen</button>
+          <button id="exportBtn">Backup exportieren</button>
+          <button id="importBtn">Backup importieren</button>
+          <input id="importFile" type="file" accept="application/json" class="hidden" />
+        </div>
+
+        <div id="searchStatus" class="status">Noch keine Suche ausgeführt.</div>
+        <div id="results" class="list-box" style="padding:16px;"></div>
+      </div>
+    </section>
+
+    <section id="tab-einstellungen" class="tab-panel hidden">
+      <div class="card">
+        <h2>Einstellungen</h2>
+
+        <div class="field">
+          <label>Backup</label>
+          <div class="status">
+            Automatisches internes Backup läuft:
+            - beim Speichern
+            - beim Start der App
+            - jede Stunde
+            - vor dem Verlassen der Seite
+          </div>
+        </div>
+
+        <div class="button-grid">
+          <button id="forceBackupBtn">Backup jetzt erstellen</button>
+          <button id="restoreBackupBtn">Letztes internes Backup wiederherstellen</button>
+          <button id="deleteAllBtn" class="danger">Alle Pakete löschen</button>
+        </div>
+
+        <div class="field">
+          <label>Bluetooth</label>
+          <div class="status" id="bluetoothStatus">Noch nicht geprüft.</div>
+        </div>
+
+        <div class="button-grid">
+          <button id="checkBluetoothBtn">Bluetooth-Unterstützung prüfen</button>
+        </div>
+
+        <div class="field">
+          <label>ZPL-Vorlage</label>
+          <textarea id="zplOutput" class="mono" placeholder="Hier erscheint ZPL für Zebra-Drucker"></textarea>
+          <div class="small">
+            Für iPhone/Safari ist direkter Bluetooth-Druck aus dem Browser oft nicht praktikabel. Für normale Drucker nutze bitte den Druckdialog.
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div id="printLabel" class="print-area hidden"></div>
   </div>
 
-  <script src="app.js"></script>
+  <script src="./app.js"></script>
 </body>
 </html>
