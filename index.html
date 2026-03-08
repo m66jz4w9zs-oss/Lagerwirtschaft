@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<title>Paketlager</title>
+
+<link rel="stylesheet" href="style.css">
+
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+
+</head>
+
+
+<body class="locked">
+
+
+<div id="authScreen" class="auth">
+
+<div class="auth-box">
+
+<h2>Paketlager Login</h2>
+
+<input id="authUsername" placeholder="Benutzer">
+<input id="authPassword" type="password" placeholder="Passwort">
+
+<button id="authLoginBtn">Login</button>
+
+<div id="authStatus"></div>
+
+</div>
+
+</div>
+
+
+
+<div class="app">
+
+<h1>Paketlager</h1>
+
+<div class="stats">
+
+<div>
+Belegt
+<b id="statUsed">0</b>
+</div>
+
+<div>
+Frei
+<b id="statFree">500</b>
+</div>
+
+<div>
+Gesamt
+<b>500</b>
+</div>
+
+</div>
+
+
+<div class="tabs">
+
+<button class="tab active" data="scan">Scan</button>
+<button class="tab" data="search">Suche</button>
+<button class="tab" data="settings">Einstellungen</button>
+
+</div>
+
+
+
+<section id="scan" class="page">
+
+<button id="newPackageBtn" class="big">
+
+📷 Neues Paket scannen
+
+</button>
+
+<input
+id="packageImageInput"
+type="file"
+accept="image/*"
+capture="environment"
+class="hidden"
+>
+
+
+<textarea id="ocrText" placeholder="OCR Text"></textarea>
+
+
+<div class="grid">
+
+<input id="firstName" placeholder="Vorname">
+<input id="lastName" placeholder="Name">
+
+<input id="street" placeholder="Straße">
+<input id="houseNumber" placeholder="Hausnummer">
+
+<input id="postalCode" placeholder="PLZ">
+<input id="city" placeholder="Ort">
+
+</div>
+
+<input id="storageNumber" placeholder="Lagernummer" readonly>
+
+<input id="notes" placeholder="Notiz">
+
+
+<div class="buttons">
+
+<button id="saveBtn">Speichern</button>
+<button id="printBtn">Drucken</button>
+<button id="clearBtn">Leeren</button>
+
+</div>
+
+<div id="acceptStatus"></div>
+
+</section>
+
+
+
+<section id="search" class="page hidden">
+
+<input id="searchInput" placeholder="Suche">
+
+<button id="searchBtn">Suchen</button>
+
+<div id="results"></div>
+
+</section>
+
+
+
+<section id="settings" class="page hidden">
+
+<button id="logoutBtn">Logout</button>
+
+</section>
+
+
+
+</div>
+
+
+<script src="app.js"></script>
+
+</body>
+</html>
