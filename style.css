@@ -1,0 +1,101 @@
+body{
+font-family:Arial;
+background:#f4f4f5;
+margin:0;
+}
+
+.app{
+max-width:900px;
+margin:auto;
+padding:20px;
+}
+
+.card{
+background:white;
+padding:20px;
+border-radius:20px;
+margin-bottom:20px;
+border:2px solid #ddd;
+}
+
+.field{
+margin-bottom:12px;
+}
+
+.field input,
+.field textarea{
+width:100%;
+padding:10px;
+border-radius:10px;
+border:2px solid #ddd;
+}
+
+.row{
+display:grid;
+grid-template-columns:1fr 1fr;
+gap:10px;
+}
+
+button{
+padding:12px;
+border-radius:12px;
+border:2px solid #ddd;
+background:white;
+cursor:pointer;
+}
+
+button.primary{
+background:black;
+color:white;
+}
+
+button.danger{
+color:red;
+}
+
+.tabs{
+display:flex;
+gap:10px;
+margin-bottom:20px;
+}
+
+.tab-btn.active{
+background:black;
+color:white;
+}
+
+.status{
+margin-top:10px;
+padding:10px;
+border-radius:10px;
+background:white;
+border:2px solid #ddd;
+}
+
+.hidden{
+display:none;
+}
+
+.package{
+border:2px solid #ddd;
+padding:10px;
+border-radius:12px;
+margin-bottom:10px;
+}
+
+.auth-screen{
+position:fixed;
+inset:0;
+background:#f4f4f5;
+display:flex;
+align-items:center;
+justify-content:center;
+}
+
+.auth-card{
+background:white;
+padding:30px;
+border-radius:20px;
+border:2px solid #ddd;
+width:300px;
+}
