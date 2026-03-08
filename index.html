@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Lagerwirtschaft</title>
+  <meta name="theme-color" content="#ffffff" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <h1>Lagerwirtschaft</h1>
+    </header>
+
+    <nav class="tabs">
+      <button class="tab active" data-tab="receive">Annahme</button>
+      <button class="tab" data-tab="search">Suche</button>
+      <button class="tab" data-tab="settings">Einstellungen</button>
+    </nav>
+
+    <main>
+      <section id="tab-receive" class="tab-panel active">
+        <div class="card">
+          <h2>Paket annehmen</h2>
+
+          <div class="grid">
+            <label>
+              <span>Vorname</span>
+              <input id="firstName" type="text" />
+            </label>
+
+            <label>
+              <span>Nachname</span>
+              <input id="lastName" type="text" />
+            </label>
+
+            <label class="full">
+              <span>Straße</span>
+              <input id="street" type="text" />
+            </label>
+
+            <label>
+              <span>Hausnr.</span>
+              <input id="houseNo" type="text" />
+            </label>
+
+            <label>
+              <span>PLZ</span>
+              <input id="postalCode" type="text" inputmode="numeric" />
+            </label>
+
+            <label class="full">
+              <span>Ort</span>
+              <input id="city" type="text" />
+            </label>
+          </div>
+
+          <div class="actions">
+            <button id="saveBtn" class="primary">Speichern</button>
+            <button id="clearBtn" type="button">Leeren</button>
+          </div>
+
+          <p id="receiveStatus" class="status"></p>
+        </div>
+      </section>
+
+      <section id="tab-search" class="tab-panel">
+        <div class="card">
+          <h2>Paket finden</h2>
+
+          <label>
+            <span>Name oder Adresse</span>
+            <input id="searchQuery" type="text" placeholder="z. B. Meier oder Musterstraße" />
+          </label>
+
+          <div class="search-toolbar">
+            <label>
+              <span>Sortieren nach</span>
+              <select id="sortBy">
+                <option value="arrival">Ankunft</option>
+                <option value="number">Nummer</option>
+              </select>
+            </label>
+
+            <label class="checkbox-row">
+              <input id="sortAscending" type="checkbox" />
+              <span>Aufsteigend</span>
+            </label>
+          </div>
+
+          <div id="results" class="list"></div>
+        </div>
+      </section>
+
+      <section id="tab-settings" class="tab-panel">
+        <div class="card">
+          <h2>Einstellungen</h2>
+
+          <div class="grid">
+            <label class="full">
+              <span>Druckmodus</span>
+              <select id="printerMode">
+                <option value="label">Labeldrucker (ZPL)</option>
+                <option value="airPrint">Normaler Drucker</option>
+                <option value="bluetooth">Bluetooth-Drucker</option>
+              </select>
+            </label>
+
+            <label>
+              <span>Drucker IP</span>
+              <input id="printerIP" type="text" placeholder="192.168.1.50" />
+            </label>
+
+            <label>
+              <span>Port</span>
+              <input id="printerPort" type="number" placeholder="9100" />
+            </label>
+
+            <label class="full">
+              <span>Bluetooth Geräte-ID</span>
+              <input id="bluetoothDeviceIdentifier" type="text" />
+            </label>
+          </div>
+
+          <div class="actions">
+            <button id="saveSettingsBtn" class="primary">Einstellungen speichern</button>
+          </div>
+
+          <p id="settingsStatus" class="status"></p>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <template id="resultItemTemplate">
+    <article class="result-item">
+      <div class="result-number"></div>
+      <div class="result-body">
+        <div class="result-name"></div>
+        <div class="result-address"></div>
+        <div class="result-date"></div>
+      </div>
+      <div class="result-actions">
+        <button class="danger delete-btn">Löschen</button>
+      </div>
+    </article>
+  </template>
+
+  <script src="app.js"></script>
+</body>
+</html>
