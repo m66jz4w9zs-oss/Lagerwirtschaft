@@ -3,9 +3,15 @@ const DB_VERSION = 1;
 const STORE_PACKAGES = "packages";
 const STORE_BACKUPS = "backups";
 
+const AUTH_STORAGE_KEY = "lager_auth_v1";
+const AUTH_SESSION_KEY = "lager_auth_session_v1";
+const DRAFT_STORAGE_KEY = "lagerwirtschaft_draft";
+const AUTO_LOCK_MS = 15 * 60 * 1000;
+
 let db = null;
 let cameraStream = null;
 let currentPhotoDataUrl = "";
+let inactivityTimer = null;
 
 const els = {
   tabs: document.querySelectorAll(".tab-btn"),
@@ -47,15 +53,27 @@ const els = {
   forceBackupBtn: document.getElementById("forceBackupBtn"),
   restoreBackupBtn: document.getElementById("restoreBackupBtn"),
   deleteAllBtn: document.getElementById("deleteAllBtn"),
+  logoutBtn: document.getElementById("logoutBtn"),
   checkBluetoothBtn: document.getElementById("checkBluetoothBtn"),
   bluetoothStatus: document.getElementById("bluetoothStatus"),
   zplOutput: document.getElementById("zplOutput"),
 
-  printLabel: document.getElementById("printLabel")
+  printLabel: document.getElementById("printLabel"),
+
+  authScreen: document.getElementById("authScreen"),
+  authTitle: document.getElementById("authTitle"),
+  authText: document.getElementById("authText"),
+  authUsername: document.getElementById("authUsername"),
+  authPassword: document.getElementById("authPassword"),
+  authPasswordConfirm: document.getElementById("authPasswordConfirm"),
+  authConfirmWrap: document.getElementById("authConfirmWrap"),
+  authLoginBtn: document.getElementById("authLoginBtn"),
+  authSetupBtn: document.getElementById("authSetupBtn"),
+  authStatus: document.getElementById("authStatus")
 };
 
 function setStatus(el, message) {
-  el.textContent = message;
+  if (el) el.textContent = message;
 }
 
 function escapeHtml(value) {
@@ -75,12 +93,14 @@ function formatDateTime(iso) {
   try {
     return new Date(iso).toLocaleString("de-DE");
   } catch {
-    return iso;
+    return iso || "";
   }
 }
 
 function generateId() {
-  return crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}_${Math.random().toString(16).slice(2)}`;
+  return crypto.randomUUID
+    ? crypto.randomUUID()
+    : `${Date.now()}_${Math.random().toString(16).slice(2)}`;
 }
 
 function sanitizeZplText(value) {
@@ -121,7 +141,7 @@ function buildPrintHtml(pkg) {
       <div><strong>Empfänger:</strong> ${escapeHtml(pkg.recipient || "-")}</div>
       <div><strong>Versanddienst:</strong> ${escapeHtml(pkg.carrier || "-")}</div>
       <div><strong>Lagerplatz:</strong> ${escapeHtml(pkg.storageLocation || "-")}</div>
-      <div><strong>Eingang:</strong> ${escapeHtml(formatDateTime(pkg.createdAt))}</div>
+      <div><strong>Eingang:</strong> ${escapeHtml(formatDateTime(pkg.createdAt || nowIso()))}</div>
       ${pkg.notes ? `<div><strong>Notiz:</strong> ${escapeHtml(pkg.notes)}</div>` : ""}
       <hr style="margin:16px 0;">
       <div style="font-size:16px;">Barcode-Inhalt:</div>
@@ -195,7 +215,7 @@ async function getAllPackages() {
     const request = tx(STORE_PACKAGES).getAll();
     request.onsuccess = () => {
       const items = Array.isArray(request.result) ? request.result : [];
-      items.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+      items.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
       resolve(items);
     };
     request.onerror = () => reject(request.error);
@@ -213,6 +233,22 @@ async function deletePackage(id) {
 async function clearPackages() {
   return new Promise((resolve, reject) => {
     const request = tx(STORE_PACKAGES, "readwrite").clear();
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function getAllBackups() {
+  return new Promise((resolve, reject) => {
+    const request = tx(STORE_BACKUPS).getAll();
+    request.onsuccess = () => resolve(request.result || []);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function deleteBackup(id) {
+  return new Promise((resolve, reject) => {
+    const request = tx(STORE_BACKUPS, "readwrite").delete(id);
     request.onsuccess = () => resolve();
     request.onerror = () => reject(request.error);
   });
@@ -247,22 +283,6 @@ async function saveInternalBackup(reason = "auto") {
   return backup;
 }
 
-async function getAllBackups() {
-  return new Promise((resolve, reject) => {
-    const request = tx(STORE_BACKUPS).getAll();
-    request.onsuccess = () => resolve(request.result || []);
-    request.onerror = () => reject(request.error);
-  });
-}
-
-async function deleteBackup(id) {
-  return new Promise((resolve, reject) => {
-    const request = tx(STORE_BACKUPS, "readwrite").delete(id);
-    request.onsuccess = () => resolve();
-    request.onerror = () => reject(request.error);
-  });
-}
-
 async function getLatestInternalBackup() {
   const backups = await getAllBackups();
   backups.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
@@ -272,20 +292,18 @@ async function getLatestInternalBackup() {
   }
 
   const local = localStorage.getItem("lagerwirtschaft_latest_backup");
-  if (local) {
-    try {
-      return JSON.parse(local);
-    } catch {
-      return null;
-    }
-  }
+  if (!local) return null;
 
-  return null;
+  try {
+    return JSON.parse(local);
+  } catch {
+    return null;
+  }
 }
 
 async function restoreBackupData(backup) {
   if (!backup || !Array.isArray(backup.packages)) {
-    throw new Error("Ungültiges Backup");
+    throw new Error("Ungültiges Backup.");
   }
 
   await clearPackages();
@@ -297,9 +315,207 @@ async function restoreBackupData(backup) {
   await saveInternalBackup("restore");
 }
 
+function getStoredAuth() {
+  const raw = localStorage.getItem(AUTH_STORAGE_KEY);
+  if (!raw) return null;
+
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+function setSessionAuthenticated(username) {
+  sessionStorage.setItem(
+    AUTH_SESSION_KEY,
+    JSON.stringify({
+      username,
+      loginAt: Date.now()
+    })
+  );
+}
+
+function isSessionAuthenticated() {
+  const raw = sessionStorage.getItem(AUTH_SESSION_KEY);
+  if (!raw) return false;
+
+  try {
+    const session = JSON.parse(raw);
+    return !!session?.username;
+  } catch {
+    return false;
+  }
+}
+
+function clearSessionAuthenticated() {
+  sessionStorage.removeItem(AUTH_SESSION_KEY);
+}
+
+async function sha256(text) {
+  const data = new TextEncoder().encode(text);
+  const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, "0")).join("");
+}
+
+function showAuthScreen() {
+  document.body.classList.add("locked");
+  els.authScreen.classList.remove("hidden");
+}
+
+function hideAuthScreen() {
+  document.body.classList.remove("locked");
+  els.authScreen.classList.add("hidden");
+}
+
+function clearAuthInputs() {
+  els.authPassword.value = "";
+  els.authPasswordConfirm.value = "";
+}
+
+function prepareAuthMode() {
+  const auth = getStoredAuth();
+  clearAuthInputs();
+
+  if (auth && auth.username && auth.passwordHash) {
+    els.authTitle.textContent = "Anmeldung";
+    els.authText.textContent = "Bitte mit Benutzername und Passwort anmelden.";
+    els.authLoginBtn.classList.remove("hidden");
+    els.authSetupBtn.classList.add("hidden");
+    els.authConfirmWrap.classList.add("hidden");
+    els.authUsername.value = auth.username || "";
+    setStatus(els.authStatus, "Bitte anmelden.");
+  } else {
+    els.authTitle.textContent = "Ersten Zugang einrichten";
+    els.authText.textContent = "Lege einen Benutzer und ein Passwort für diese App fest.";
+    els.authLoginBtn.classList.add("hidden");
+    els.authSetupBtn.classList.remove("hidden");
+    els.authConfirmWrap.classList.remove("hidden");
+    els.authUsername.value = "";
+    setStatus(els.authStatus, "Noch kein Zugang eingerichtet.");
+  }
+}
+
+async function setupAuth() {
+  const username = els.authUsername.value.trim();
+  const password = els.authPassword.value;
+  const confirm = els.authPasswordConfirm.value;
+
+  if (!username) {
+    throw new Error("Bitte einen Benutzernamen eingeben.");
+  }
+
+  if (!password || password.length < 6) {
+    throw new Error("Das Passwort muss mindestens 6 Zeichen lang sein.");
+  }
+
+  if (password !== confirm) {
+    throw new Error("Die Passwörter stimmen nicht überein.");
+  }
+
+  const passwordHash = await sha256(password);
+
+  localStorage.setItem(
+    AUTH_STORAGE_KEY,
+    JSON.stringify({
+      username,
+      passwordHash,
+      createdAt: nowIso()
+    })
+  );
+
+  setSessionAuthenticated(username);
+  hideAuthScreen();
+  resetInactivityTimer();
+}
+
+async function loginAuth() {
+  const username = els.authUsername.value.trim();
+  const password = els.authPassword.value;
+  const auth = getStoredAuth();
+
+  if (!auth) {
+    throw new Error("Es ist noch kein Zugang eingerichtet.");
+  }
+
+  const passwordHash = await sha256(password);
+
+  if (username !== auth.username || passwordHash !== auth.passwordHash) {
+    throw new Error("Benutzername oder Passwort ist falsch.");
+  }
+
+  setSessionAuthenticated(username);
+  hideAuthScreen();
+  clearAuthInputs();
+  resetInactivityTimer();
+}
+
+function stopCamera() {
+  if (cameraStream) {
+    cameraStream.getTracks().forEach(track => track.stop());
+    cameraStream = null;
+  }
+
+  if (els.camera) {
+    els.camera.srcObject = null;
+    els.camera.classList.add("hidden");
+  }
+
+  if (els.cameraPlaceholder) {
+    els.cameraPlaceholder.classList.remove("hidden");
+  }
+}
+
+function forceLock(reason = "Sitzung gesperrt.") {
+  clearSessionAuthenticated();
+  stopCamera();
+
+  if (inactivityTimer) {
+    clearTimeout(inactivityTimer);
+    inactivityTimer = null;
+  }
+
+  showAuthScreen();
+  prepareAuthMode();
+  setStatus(els.authStatus, reason);
+}
+
+function logoutAuth() {
+  forceLock("Abgemeldet.");
+}
+
+function resetInactivityTimer() {
+  if (!isSessionAuthenticated()) return;
+
+  if (inactivityTimer) {
+    clearTimeout(inactivityTimer);
+  }
+
+  inactivityTimer = setTimeout(() => {
+    forceLock("Sitzung wegen Inaktivität gesperrt.");
+  }, AUTO_LOCK_MS);
+}
+
+function bindActivityEvents() {
+  ["click", "keydown", "touchstart", "mousemove", "scroll"].forEach(eventName => {
+    document.addEventListener(
+      eventName,
+      () => {
+        resetInactivityTimer();
+      },
+      { passive: true }
+    );
+  });
+}
+
 async function startCamera() {
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
     throw new Error("Dieses Gerät oder dieser Browser unterstützt keine Kamera-API.");
+  }
+
+  if (!isSessionAuthenticated()) {
+    throw new Error("Bitte zuerst anmelden.");
   }
 
   if (cameraStream) {
@@ -318,17 +534,6 @@ async function startCamera() {
   els.camera.classList.remove("hidden");
   els.cameraPlaceholder.classList.add("hidden");
   await els.camera.play();
-}
-
-function stopCamera() {
-  if (cameraStream) {
-    cameraStream.getTracks().forEach(track => track.stop());
-    cameraStream = null;
-  }
-
-  els.camera.srcObject = null;
-  els.camera.classList.add("hidden");
-  els.cameraPlaceholder.classList.remove("hidden");
 }
 
 function takePhoto() {
@@ -352,6 +557,10 @@ function takePhoto() {
 async function runOCR() {
   if (!currentPhotoDataUrl) {
     throw new Error("Bitte zuerst ein Foto aufnehmen.");
+  }
+
+  if (typeof Tesseract === "undefined") {
+    throw new Error("Tesseract wurde nicht geladen.");
   }
 
   setStatus(els.acceptStatus, "OCR läuft ... bitte warten.");
@@ -380,8 +589,11 @@ function autoFillFromOCR(text) {
   }
 
   if (!els.carrier.value) {
-    const map = ["DHL", "DPD", "GLS", "Hermes", "UPS", "FedEx"];
-    const found = map.find(name => clean.toLowerCase().includes(name.toLowerCase()));
+    const carriers = ["DHL", "DPD", "GLS", "Hermes", "UPS", "FedEx"];
+    const found = carriers.find(name =>
+      clean.toLowerCase().includes(name.toLowerCase())
+    );
+
     if (found) {
       els.carrier.value = found;
     }
@@ -414,7 +626,7 @@ function getFormData() {
     storageLocation: els.storageLocation.value.trim(),
     notes: els.notes.value.trim(),
     ocrText: els.ocrText.value.trim(),
-    imageDataUrl: currentPhotoDataUrl || "",
+    imageDataUrl: currentPhotoDataUrl || ""
   };
 }
 
@@ -430,7 +642,51 @@ function clearForm() {
   els.photo.classList.add("hidden");
   els.photoPlaceholder.classList.remove("hidden");
   els.zplOutput.value = "";
+  localStorage.removeItem(DRAFT_STORAGE_KEY);
   setStatus(els.acceptStatus, "Formular geleert.");
+}
+
+function saveDraft() {
+  try {
+    const draft = {
+      trackingNumber: els.trackingNumber.value,
+      carrier: els.carrier.value,
+      recipient: els.recipient.value,
+      storageLocation: els.storageLocation.value,
+      notes: els.notes.value,
+      ocrText: els.ocrText.value,
+      imageDataUrl: currentPhotoDataUrl
+    };
+
+    localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(draft));
+  } catch {}
+}
+
+async function restoreDraft() {
+  const raw = localStorage.getItem(DRAFT_STORAGE_KEY);
+  if (!raw) return;
+
+  try {
+    const draft = JSON.parse(raw);
+
+    els.trackingNumber.value = draft.trackingNumber || "";
+    els.carrier.value = draft.carrier || "";
+    els.recipient.value = draft.recipient || "";
+    els.storageLocation.value = draft.storageLocation || "";
+    els.notes.value = draft.notes || "";
+    els.ocrText.value = draft.ocrText || "";
+    currentPhotoDataUrl = draft.imageDataUrl || "";
+
+    if (currentPhotoDataUrl) {
+      els.photo.src = currentPhotoDataUrl;
+      els.photo.classList.remove("hidden");
+      els.photoPlaceholder.classList.add("hidden");
+    } else {
+      els.photo.src = "";
+      els.photo.classList.add("hidden");
+      els.photoPlaceholder.classList.remove("hidden");
+    }
+  } catch {}
 }
 
 async function savePackageFromForm() {
@@ -449,6 +705,7 @@ async function savePackageFromForm() {
 
   await addPackage(pkg);
   await saveInternalBackup("save");
+  localStorage.removeItem(DRAFT_STORAGE_KEY);
 
   els.zplOutput.value = buildZPL(pkg);
   setStatus(els.acceptStatus, `Paket gespeichert: ${pkg.trackingNumber}`);
@@ -461,36 +718,35 @@ function renderPackages(items) {
     return;
   }
 
-  els.results.innerHTML = items.map(pkg => {
-    const thumb = pkg.imageDataUrl
-      ? `<img src="${pkg.imageDataUrl}" alt="Paketbild" style="max-width:160px;border-radius:12px;border:1px solid #ddd;margin-top:8px;">`
-      : "";
+  els.results.innerHTML = items
+    .map(pkg => {
+      const thumb = pkg.imageDataUrl
+        ? `<img src="${pkg.imageDataUrl}" alt="Paketbild" style="max-width:160px;border-radius:12px;border:1px solid #ddd;margin-top:8px;">`
+        : "";
 
-    return `
-      <div class="package-item">
-        <h3>${escapeHtml(pkg.trackingNumber || "-")}</h3>
-        <div class="package-meta">
-          Eingang: ${escapeHtml(formatDateTime(pkg.createdAt))}
+      return `
+        <div class="package-item">
+          <h3>${escapeHtml(pkg.trackingNumber || "-")}</h3>
+          <div class="package-meta">Eingang: ${escapeHtml(formatDateTime(pkg.createdAt))}</div>
+          <div><strong>Empfänger:</strong> ${escapeHtml(pkg.recipient || "-")}</div>
+          <div><strong>Versanddienst:</strong> ${escapeHtml(pkg.carrier || "-")}</div>
+          <div><strong>Lagerplatz:</strong> ${escapeHtml(pkg.storageLocation || "-")}</div>
+          <div><strong>Notiz:</strong> ${escapeHtml(pkg.notes || "-")}</div>
+          ${thumb}
+          <div class="package-actions">
+            <button onclick="printPackageById('${pkg.id}')">Drucken</button>
+            <button onclick="fillFormById('${pkg.id}')">In Formular laden</button>
+            <button onclick="removePackageById('${pkg.id}')">Löschen</button>
+          </div>
         </div>
-        <div><strong>Empfänger:</strong> ${escapeHtml(pkg.recipient || "-")}</div>
-        <div><strong>Versanddienst:</strong> ${escapeHtml(pkg.carrier || "-")}</div>
-        <div><strong>Lagerplatz:</strong> ${escapeHtml(pkg.storageLocation || "-")}</div>
-        <div><strong>Notiz:</strong> ${escapeHtml(pkg.notes || "-")}</div>
-        ${thumb}
-        <div class="package-actions">
-          <button onclick="printPackageById('${pkg.id}')">Drucken</button>
-          <button onclick="fillFormById('${pkg.id}')">In Formular laden</button>
-          <button class="danger" onclick="removePackageById('${pkg.id}')">Löschen</button>
-        </div>
-      </div>
-    `;
-  }).join("");
+      `;
+    })
+    .join("");
 }
 
 async function searchPackages() {
   const query = els.searchInput.value.trim().toLowerCase();
   const carrier = els.searchCarrier.value.trim().toLowerCase();
-
   const all = await getAllPackages();
 
   const filtered = all.filter(pkg => {
@@ -521,6 +777,11 @@ async function showAllPackages() {
   setStatus(els.searchStatus, `${all.length} Paket(e) geladen.`);
 }
 
+async function getPackageById(id) {
+  const items = await getAllPackages();
+  return items.find(x => x.id === id) || null;
+}
+
 function loadPackageIntoForm(pkg) {
   els.trackingNumber.value = pkg.trackingNumber || "";
   els.carrier.value = pkg.carrier || "";
@@ -543,11 +804,6 @@ function loadPackageIntoForm(pkg) {
   els.zplOutput.value = buildZPL(pkg);
   switchTab("annahme");
   setStatus(els.acceptStatus, `Paket ${pkg.trackingNumber} in Formular geladen.`);
-}
-
-async function getPackageById(id) {
-  const items = await getAllPackages();
-  return items.find(x => x.id === id) || null;
 }
 
 async function printPackage(pkg) {
@@ -597,7 +853,6 @@ async function importBackupFile(file) {
 
   await restoreBackupData({ packages: data.packages });
   await showAllPackages();
-
   setStatus(els.searchStatus, `${data.packages.length} Paket(e) importiert.`);
 }
 
@@ -648,10 +903,7 @@ function startHourlyBackup() {
 
 async function startupRestoreIfNeeded() {
   const packages = await getAllPackages();
-
-  if (packages.length > 0) {
-    return;
-  }
+  if (packages.length > 0) return;
 
   const backup = await getLatestInternalBackup();
   if (backup && Array.isArray(backup.packages) && backup.packages.length > 0) {
@@ -701,6 +953,52 @@ function bindEvents() {
     btn.addEventListener("click", () => switchTab(btn.dataset.tab));
   });
 
+  els.authSetupBtn.addEventListener("click", async () => {
+    try {
+      await setupAuth();
+      setStatus(els.authStatus, "Zugang eingerichtet.");
+    } catch (error) {
+      setStatus(els.authStatus, `Fehler: ${error.message || error}`);
+    }
+  });
+
+  els.authLoginBtn.addEventListener("click", async () => {
+    try {
+      await loginAuth();
+      setStatus(els.authStatus, "Anmeldung erfolgreich.");
+    } catch (error) {
+      setStatus(els.authStatus, `Fehler: ${error.message || error}`);
+    }
+  });
+
+  els.authPassword.addEventListener("keydown", async event => {
+    if (event.key !== "Enter") return;
+
+    try {
+      if (getStoredAuth()) {
+        await loginAuth();
+        setStatus(els.authStatus, "Anmeldung erfolgreich.");
+      } else {
+        await setupAuth();
+        setStatus(els.authStatus, "Zugang eingerichtet.");
+      }
+    } catch (error) {
+      setStatus(els.authStatus, `Fehler: ${error.message || error}`);
+    }
+  });
+
+  els.authPasswordConfirm.addEventListener("keydown", async event => {
+    if (event.key !== "Enter") return;
+    if (getStoredAuth()) return;
+
+    try {
+      await setupAuth();
+      setStatus(els.authStatus, "Zugang eingerichtet.");
+    } catch (error) {
+      setStatus(els.authStatus, `Fehler: ${error.message || error}`);
+    }
+  });
+
   els.startCameraBtn.addEventListener("click", async () => {
     try {
       await startCamera();
@@ -718,6 +1016,7 @@ function bindEvents() {
   els.takePhotoBtn.addEventListener("click", () => {
     try {
       takePhoto();
+      saveDraft();
       setStatus(els.acceptStatus, "Foto aufgenommen.");
     } catch (error) {
       setStatus(els.acceptStatus, `Foto-Fehler: ${error.message || error}`);
@@ -727,6 +1026,7 @@ function bindEvents() {
   els.ocrBtn.addEventListener("click", async () => {
     try {
       await runOCR();
+      saveDraft();
     } catch (error) {
       setStatus(els.acceptStatus, `OCR-Fehler: ${error.message || error}`);
     }
@@ -823,6 +1123,10 @@ function bindEvents() {
     }
   });
 
+  els.logoutBtn.addEventListener("click", () => {
+    logoutAuth();
+  });
+
   els.deleteAllBtn.addEventListener("click", async () => {
     const ok = confirm("Wirklich alle Pakete löschen?");
     if (!ok) return;
@@ -841,49 +1145,48 @@ function bindEvents() {
     await checkBluetoothSupport();
   });
 
+  [
+    els.trackingNumber,
+    els.carrier,
+    els.recipient,
+    els.storageLocation,
+    els.notes,
+    els.ocrText
+  ].forEach(input => {
+    input.addEventListener("input", saveDraft);
+    input.addEventListener("change", saveDraft);
+  });
+
   window.addEventListener("beforeunload", () => {
     try {
-      const draft = {
-        trackingNumber: els.trackingNumber.value,
-        carrier: els.carrier.value,
-        recipient: els.recipient.value,
-        storageLocation: els.storageLocation.value,
-        notes: els.notes.value,
-        ocrText: els.ocrText.value,
-        imageDataUrl: currentPhotoDataUrl
-      };
-      localStorage.setItem("lagerwirtschaft_draft", JSON.stringify(draft));
+      saveDraft();
     } catch {}
   });
-}
 
-async function restoreDraft() {
-  const raw = localStorage.getItem("lagerwirtschaft_draft");
-  if (!raw) return;
-
-  try {
-    const draft = JSON.parse(raw);
-
-    els.trackingNumber.value = draft.trackingNumber || "";
-    els.carrier.value = draft.carrier || "";
-    els.recipient.value = draft.recipient || "";
-    els.storageLocation.value = draft.storageLocation || "";
-    els.notes.value = draft.notes || "";
-    els.ocrText.value = draft.ocrText || "";
-    currentPhotoDataUrl = draft.imageDataUrl || "";
-
-    if (currentPhotoDataUrl) {
-      els.photo.src = currentPhotoDataUrl;
-      els.photo.classList.remove("hidden");
-      els.photoPlaceholder.classList.add("hidden");
+  document.addEventListener("visibilitychange", async () => {
+    if (document.hidden) {
+      try {
+        saveDraft();
+        await saveInternalBackup("background");
+      } catch {}
     }
-  } catch {}
+  });
 }
 
 async function init() {
   try {
     await openDatabase();
     bindEvents();
+    bindActivityEvents();
+    prepareAuthMode();
+
+    if (isSessionAuthenticated()) {
+      hideAuthScreen();
+      resetInactivityTimer();
+    } else {
+      showAuthScreen();
+    }
+
     await startupRestoreIfNeeded();
     await restoreDraft();
     await showAllPackages();
