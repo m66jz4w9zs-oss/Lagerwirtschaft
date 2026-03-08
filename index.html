@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+
+<title>Paketlager</title>
+
+<link rel="stylesheet" href="style.css">
+
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+
+<script src="https://unpkg.com/@zxing/library@latest"></script>
+
+</head>
+
+<body>
+
+<div id="loginScreen">
+
+<h2>Paketlager Login</h2>
+
+<input id="username" placeholder="Benutzer">
+<input id="password" type="password" placeholder="Passwort">
+
+<button id="loginBtn">Login</button>
+
+<div id="loginMsg"></div>
+
+</div>
+
+
+
+<div id="app" class="hidden">
+
+<h1>Paketlager</h1>
+
+<div class="stats">
+
+<div>
+Belegt<br>
+<b id="statUsed">0</b>
+</div>
+
+<div>
+Frei<br>
+<b id="statFree">500</b>
+</div>
+
+<div>
+Gesamt<br>
+<b>500</b>
+</div>
+
+</div>
+
+
+<h2>Scanner</h2>
+
+<video id="camera" autoplay></video>
+
+<button id="startScan">Scanner starten</button>
+
+<textarea id="ocrText" placeholder="OCR Text"></textarea>
+
+
+<div class="grid">
+
+<input id="firstName" placeholder="Vorname">
+<input id="lastName" placeholder="Name">
+
+<input id="street" placeholder="Straße">
+<input id="houseNumber" placeholder="Hausnummer">
+
+<input id="postalCode" placeholder="PLZ">
+<input id="city" placeholder="Ort">
+
+</div>
+
+
+<input id="storageNumber" readonly placeholder="Lagernummer">
+
+<input id="notes" placeholder="Notiz">
+
+
+<div class="buttons">
+
+<button id="savePackage">Speichern</button>
+<button id="printLabel">ZPL</button>
+<button id="clearForm">Leeren</button>
+
+</div>
+
+
+<h2>Suche</h2>
+
+<input id="searchInput" placeholder="Suche">
+
+<button id="searchBtn">Suchen</button>
+
+<div id="packageList"></div>
+
+
+<button id="logoutBtn">Logout</button>
+
+</div>
+
+<script src="app.js"></script>
+
+</body>
+</html>
