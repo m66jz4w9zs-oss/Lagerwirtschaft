@@ -7,6 +7,8 @@
   --blue: #2563eb;
   --danger: #c62828;
   --black: #111111;
+  --ok: #0f9d58;
+  --warn: #b7791f;
 }
 
 * {
@@ -202,6 +204,56 @@ button.danger {
   white-space: pre-wrap;
 }
 
+.completion-box {
+  margin: 14px 0 18px;
+  padding: 14px;
+  border: 2px solid var(--border);
+  border-radius: 16px;
+  background: #fff;
+}
+
+.completion-title {
+  font-weight: 700;
+  margin-bottom: 10px;
+}
+
+.completion-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.status-pill {
+  border: 2px solid var(--border);
+  border-radius: 999px;
+  padding: 10px 12px;
+  font-size: 14px;
+  background: #fafafa;
+  color: var(--muted);
+  text-align: center;
+}
+
+.status-pill.ok {
+  border-color: #b9e5c7;
+  background: #eefaf2;
+  color: var(--ok);
+  font-weight: 700;
+}
+
+.status-pill.warn {
+  border-color: #ecd9a6;
+  background: #fff8e5;
+  color: var(--warn);
+  font-weight: 700;
+}
+
+.status-pill.bad {
+  border-color: #efc0c0;
+  background: #fff1f1;
+  color: var(--danger);
+  font-weight: 700;
+}
+
 .results {
   display: grid;
   gap: 12px;
@@ -261,7 +313,8 @@ button.danger {
   .stats,
   .grid,
   .button-grid.two-cols,
-  .button-grid.three-cols {
+  .button-grid.three-cols,
+  .completion-grid {
     grid-template-columns: 1fr;
   }
 
