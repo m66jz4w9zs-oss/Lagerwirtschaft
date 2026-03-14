@@ -2,8 +2,8 @@ const FIXED_USERNAME = "meandme";
 const FIXED_PASSWORD = "nubKos-viwtan-1xyjte";
 const AUTO_LOGOUT_MS = 15 * 60 * 1000;
 const MAX_STORAGE_NUMBER = 500;
-const SESSION_KEY = "paketlager_session_v8";
-const STORAGE_KEY = "paketlager_packages_v8";
+const SESSION_KEY = "paketlager_session_v9";
+const STORAGE_KEY = "paketlager_packages_v9";
 
 const els = {
   loginScreen: document.getElementById("loginScreen"),
@@ -25,6 +25,11 @@ const els = {
   stopBarcodeBtn: document.getElementById("stopBarcodeBtn"),
   packageImageInput: document.getElementById("packageImageInput"),
   scannerWrap: document.getElementById("scannerWrap"),
+
+  statusStorage: document.getElementById("statusStorage"),
+  statusBarcode: document.getElementById("statusBarcode"),
+  statusAddress: document.getElementById("statusAddress"),
+  statusReady: document.getElementById("statusReady"),
 
   trackingNumber: document.getElementById("trackingNumber"),
   ocrText: document.getElementById("ocrText"),
@@ -262,6 +267,7 @@ function prepareNextPackageForm() {
 
   const next = getNextFreeStorageNumber();
   els.storageNumber.value = next ? String(next) : "";
+  updateCompletionStatus();
 }
 
 function clearForm() {
@@ -385,6 +391,18 @@ function parseAddressFromOCR(text) {
   return { firstName, lastName, street, houseNumber, postalCode, city };
 }
 
+function getAddressFilledCount() {
+  const fields = [
+    els.firstName.value.trim(),
+    els.lastName.value.trim(),
+    els.street.value.trim(),
+    els.houseNumber.value.trim(),
+    els.postalCode.value.trim(),
+    els.city.value.trim()
+  ];
+  return fields.filter(Boolean).length;
+}
+
 function hasMeaningfulData() {
   return !!(
     els.trackingNumber.value.trim() ||
@@ -396,6 +414,46 @@ function hasMeaningfulData() {
     els.city.value.trim() ||
     els.notes.value.trim() ||
     els.ocrText.value.trim()
+  );
+}
+
+function setPill(el, text, mode) {
+  el.textContent = text;
+  el.classList.remove("ok", "warn", "bad");
+  el.classList.add(mode);
+}
+
+function updateCompletionStatus() {
+  const hasStorage = !!els.storageNumber.value.trim();
+  const hasBarcode = !!els.trackingNumber.value.trim();
+  const addressCount = getAddressFilledCount();
+  const hasAnyData = hasMeaningfulData();
+  const ready = hasStorage && hasAnyData;
+
+  setPill(
+    els.statusStorage,
+    hasStorage ? `Lagernummer ${els.storageNumber.value}` : "Lagernummer fehlt",
+    hasStorage ? "ok" : "bad"
+  );
+
+  setPill(
+    els.statusBarcode,
+    hasBarcode ? "Barcode vorhanden" : "Barcode fehlt",
+    hasBarcode ? "ok" : "warn"
+  );
+
+  if (addressCount >= 4) {
+    setPill(els.statusAddress, `Adresse gut erkannt (${addressCount}/6)`, "ok");
+  } else if (addressCount >= 1) {
+    setPill(els.statusAddress, `Adresse teilweise (${addressCount}/6)`, "warn");
+  } else {
+    setPill(els.statusAddress, "Adresse fehlt", "bad");
+  }
+
+  setPill(
+    els.statusReady,
+    ready ? "Speicherbereit" : "Nicht speicherbereit",
+    ready ? "ok" : "bad"
   );
 }
 
@@ -432,6 +490,7 @@ async function processAddressImage(file) {
 
   clearAddressFieldsOnly();
   els.ocrText.value = "";
+  updateCompletionStatus();
 
   const result = await Tesseract.recognize(file, "deu+eng", {
     logger: m => {
@@ -457,9 +516,10 @@ async function processAddressImage(file) {
   const free = getNextFreeStorageNumber();
   els.storageNumber.value = free ? String(free) : "";
 
+  updateCompletionStatus();
   setStatus(
     els.acceptStatus,
-    `Adressscan abgeschlossen. Lagernummer ${els.storageNumber.value || "-"} gesetzt. Jetzt speichern oder ZPL erzeugen.`
+    `Adressscan abgeschlossen. Lagernummer ${els.storageNumber.value || "-"} gesetzt.`
   );
 }
 
@@ -485,6 +545,8 @@ async function startBarcodeScan() {
         const next = getNextFreeStorageNumber();
         els.storageNumber.value = next ? String(next) : "";
       }
+
+      updateCompletionStatus();
     },
     () => {}
   );
@@ -677,6 +739,7 @@ function fillFormById(id) {
   els.notes.value = pkg.notes || "";
   els.zplOutput.value = buildZPL(pkg);
 
+  updateCompletionStatus();
   switchTab("annahme");
 }
 
@@ -714,6 +777,24 @@ window.fillFormById = fillFormById;
 window.printPackageById = printPackageById;
 window.markCollectedById = markCollectedById;
 window.removePackageById = removePackageById;
+
+function bindCompletionInputs() {
+  [
+    els.trackingNumber,
+    els.firstName,
+    els.lastName,
+    els.street,
+    els.houseNumber,
+    els.postalCode,
+    els.city,
+    els.storageNumber,
+    els.notes,
+    els.ocrText
+  ].forEach(el => {
+    el.addEventListener("input", updateCompletionStatus);
+    el.addEventListener("change", updateCompletionStatus);
+  });
+}
 
 function bindEvents() {
   els.loginBtn.addEventListener("click", login);
@@ -803,6 +884,8 @@ function bindEvents() {
   });
 
   els.clearCollectedBtn.addEventListener("click", clearCollectedPackages);
+
+  bindCompletionInputs();
 }
 
 function init() {
@@ -822,6 +905,7 @@ function init() {
   renderAll();
   prepareNextPackageForm();
   setStatus(els.acceptStatus, "App bereit.");
+  updateCompletionStatus();
 }
 
 init();
