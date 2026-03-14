@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Paketlager</title>
+
+  <link rel="stylesheet" href="./style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+</head>
+<body>
+  <div id="loginScreen" class="screen">
+    <div class="card login-card">
+      <h1>Paketlager Login</h1>
+
+      <div class="field">
+        <label for="username">Benutzername</label>
+        <input id="username" type="text" autocomplete="username" />
+      </div>
+
+      <div class="field">
+        <label for="password">Passwort</label>
+        <input id="password" type="password" autocomplete="current-password" />
+      </div>
+
+      <button id="loginBtn" class="primary">Login</button>
+      <div id="loginMsg" class="status">Bitte anmelden.</div>
+    </div>
+  </div>
+
+  <div id="appScreen" class="hidden">
+    <div class="app">
+      <header class="topbar">
+        <div>
+          <h1>Paketlager</h1>
+          <div class="subtitle">Lokal auf einem Gerät · OCR · Barcode · Lagernummern 1–500</div>
+        </div>
+        <button id="logoutBtn" class="danger small-btn">Logout</button>
+      </header>
+
+      <section class="stats">
+        <div class="stat-card">
+          <span>Belegt</span>
+          <strong id="statUsed">0</strong>
+        </div>
+        <div class="stat-card">
+          <span>Frei</span>
+          <strong id="statFree">500</strong>
+        </div>
+        <div class="stat-card">
+          <span>Gesamt</span>
+          <strong>500</strong>
+        </div>
+      </section>
+
+      <nav class="tabs">
+        <button class="tab-btn active" data-tab="annahme">Annahme</button>
+        <button class="tab-btn" data-tab="suche">Suche</button>
+        <button class="tab-btn" data-tab="einstellungen">Einstellungen</button>
+      </nav>
+
+      <section id="tab-annahme" class="tab-panel">
+        <div class="card">
+          <h2>Neues Paket</h2>
+
+          <div class="button-grid two-cols">
+            <button id="scanAddressBtn" class="primary">Adressetikett scannen</button>
+            <button id="startBarcodeBtn">Barcode scannen</button>
+          </div>
+
+          <input
+            id="packageImageInput"
+            type="file"
+            accept="image/*"
+            capture="environment"
+            class="hidden"
+          />
+
+          <div id="scannerWrap" class="scanner-wrap hidden">
+            <div id="barcodeScanner"></div>
+            <div class="button-grid">
+              <button id="stopBarcodeBtn" class="danger">Scanner stoppen</button>
+            </div>
+          </div>
+
+          <div class="field">
+            <label for="trackingNumber">Paketnummer / Barcode</label>
+            <input id="trackingNumber" type="text" placeholder="Darf leer bleiben" />
+          </div>
+
+          <div class="field">
+            <label for="ocrText">OCR Rohtext</label>
+            <textarea id="ocrText" placeholder="Hier erscheint der erkannte Text"></textarea>
+          </div>
+
+          <div class="grid">
+            <div class="field">
+              <label for="firstName">Vorname</label>
+              <input id="firstName" type="text" placeholder="Darf leer bleiben" />
+            </div>
+
+            <div class="field">
+              <label for="lastName">Name</label>
+              <input id="lastName" type="text" placeholder="Darf leer bleiben" />
+            </div>
+
+            <div class="field">
+              <label for="street">Straße</label>
+              <input id="street" type="text" placeholder="Darf leer bleiben" />
+            </div>
+
+            <div class="field">
+              <label for="houseNumber">Hausnummer</label>
+              <input id="houseNumber" type="text" placeholder="Darf leer bleiben" />
+            </div>
+
+            <div class="field">
+              <label for="postalCode">PLZ</label>
+              <input id="postalCode" type="text" placeholder="Darf leer bleiben" />
+            </div>
+
+            <div class="field">
+              <label for="city">Ort</label>
+              <input id="city" type="text" placeholder="Darf leer bleiben" />
+            </div>
+          </div>
+
+          <div class="grid">
+            <div class="field">
+              <label for="storageNumber">Lagernummer</label>
+              <input id="storageNumber" type="text" readonly />
+            </div>
+
+            <div class="field">
+              <label for="notes">Notiz</label>
+              <input id="notes" type="text" placeholder="Optional" />
+            </div>
+          </div>
+
+          <div class="button-grid three-cols">
+            <button id="saveBtn" class="primary">Speichern</button>
+            <button id="printBtn">ZPL erzeugen</button>
+            <button id="clearBtn" class="danger">Leeren</button>
+          </div>
+
+          <div id="acceptStatus" class="status">Bereit.</div>
+        </div>
+      </section>
+
+      <section id="tab-suche" class="tab-panel hidden">
+        <div class="card">
+          <h2>Suche</h2>
+
+          <div class="field">
+            <label for="searchInput">Suche</label>
+            <input id="searchInput" type="text" placeholder="Name, Adresse, Lagernummer, Paketnummer ..." />
+          </div>
+
+          <div class="button-grid two-cols">
+            <button id="searchBtn">Suchen</button>
+            <button id="showAllBtn">Alle anzeigen</button>
+          </div>
+
+          <div id="searchStatus" class="status">Noch keine Suche ausgeführt.</div>
+          <div id="results" class="results"></div>
+        </div>
+      </section>
+
+      <section id="tab-einstellungen" class="tab-panel hidden">
+        <div class="card">
+          <h2>Einstellungen</h2>
+
+          <div class="button-grid two-cols">
+            <button id="exportBtn">Backup exportieren</button>
+            <button id="importBtn">Backup importieren</button>
+          </div>
+
+          <input id="importFile" type="file" accept="application/json" class="hidden" />
+
+          <div class="button-grid">
+            <button id="clearCollectedBtn" class="danger">Abgeholte löschen</button>
+          </div>
+
+          <div class="field">
+            <label for="zplOutput">ZPL-Ausgabe</label>
+            <textarea id="zplOutput" class="mono" placeholder="Hier erscheint die ZPL-Ausgabe"></textarea>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <script src="./app.js"></script>
+</body>
+</html>
