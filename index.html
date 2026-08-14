@@ -61,7 +61,7 @@
             <div class="two-col narrow"><label>PLZ<input id="zip" inputmode="numeric"></label><label>Ort<input id="city"></label></div>
             <label>Notiz<textarea id="notes" rows="3" placeholder="Optional, z. B. beschädigte Verpackung"></textarea></label>
           </div>
-          <aside class="panel assignment"><p class="eyebrow">AUTOMATISCHE ZUWEISUNG</p><h3>Lagerplatz</h3><div class="slot-display"><small>FREIER PLATZ</small><strong id="nextSlot">A-001</strong></div><label>Lagerzone<select id="zone"><option value="A">Zone A · Standard</option><option value="B">Zone B · Großpakete</option><option value="C">Zone C · Retouren</option></select></label><div class="info-box">Der nächste freie Platz der gewählten Zone wird automatisch reserviert.</div><button class="primary full" type="submit">Paket verbindlich einlagern</button><button class="secondary full" type="reset">Eingabe zurücksetzen</button></aside>
+          <aside class="panel assignment"><p class="eyebrow">AUTOMATISCHE ZUWEISUNG</p><h3>Lagerplatz</h3><div class="slot-display"><small>FREIER PLATZ</small><strong id="nextSlot">HERMES-001</strong></div><label>Lagerort<select id="zone"><option value="HERMES">HERMES</option><option value="DPD">DPD</option><option value="GLS">GLS</option><option value="UPS">UPS</option><option value="AMAZON">AMAZON</option></select></label><div class="info-box">Der nächste freie Platz des gewählten Lagerortes wird automatisch reserviert.</div><button class="primary full" type="submit">Paket verbindlich einlagern</button><button class="secondary full" type="reset">Eingabe zurücksetzen</button></aside>
         </form>
       </section>
 
@@ -77,7 +77,7 @@
 
       <section id="settings" class="view">
         <div class="section-head"><div><p class="eyebrow">VERWALTUNG</p><h2>Einstellungen & Datensicherung</h2><p>Lokale Daten sichern oder wiederherstellen.</p></div></div>
-        <div class="settings-grid"><div class="panel"><h3>Datensicherung</h3><p>Exportieren Sie regelmäßig eine Sicherung aller Paketdaten.</p><button id="exportBtn" class="primary full">Backup herunterladen</button><label class="upload-btn">Backup importieren<input id="importInput" type="file" accept="application/json" hidden></label></div><div class="panel"><h3>Lagerkapazität</h3><p>Drei Zonen mit jeweils 500 nummerierten Lagerplätzen.</p><div class="zone-row"><span>Zone A · Standard</span><strong>500</strong></div><div class="zone-row"><span>Zone B · Großpakete</span><strong>500</strong></div><div class="zone-row"><span>Zone C · Retouren</span><strong>500</strong></div></div></div>
+        <div class="settings-grid"><div class="panel"><h3>Datensicherung</h3><p>Exportieren Sie regelmäßig eine Sicherung aller Paketdaten.</p><button id="exportBtn" class="primary full">Backup herunterladen</button><label class="upload-btn">Backup importieren<input id="importInput" type="file" accept="application/json" hidden></label></div><div class="panel"><h3>Lagerorte & Kapazität</h3><p>Fünf Lagerorte mit jeweils 500 nummerierten Lagerplätzen.</p><div class="zone-row"><span>HERMES</span><strong>500</strong></div><div class="zone-row"><span>DPD</span><strong>500</strong></div><div class="zone-row"><span>GLS</span><strong>500</strong></div><div class="zone-row"><span>UPS</span><strong>500</strong></div><div class="zone-row"><span>AMAZON</span><strong>500</strong></div></div></div>
       </section>
     </main>
   </div>
