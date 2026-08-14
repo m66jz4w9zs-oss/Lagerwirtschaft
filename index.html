@@ -1,223 +1,88 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="de">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Paketlager</title>
-
-  <link rel="stylesheet" href="./style.css" />
-  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#13231c">
+  <meta name="description" content="Professionelle Paketshop- und Lagerverwaltung für mehrere Paketdienste">
+  <title>ParcelFlow · Paketshop & Lager</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <div id="loginScreen" class="screen">
-    <div class="card login-card">
-      <h1>Paketlager Login</h1>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <a class="brand" href="#" aria-label="ParcelFlow Startseite"><span class="brand-mark">PF</span><span>Parcel<span>Flow</span></span></a>
+      <nav id="nav" aria-label="Hauptnavigation">
+        <button class="nav-item active" data-view="dashboard"><span>⌂</span> Übersicht</button>
+        <button class="nav-item" data-view="intake"><span>＋</span> Paket annehmen</button>
+        <button class="nav-item" data-view="inventory"><span>▦</span> Lagerbestand</button>
+        <button class="nav-item" data-view="pickup"><span>✓</span> Abholung</button>
+        <button class="nav-item" data-view="settings"><span>⚙</span> Einstellungen</button>
+      </nav>
+      <div class="sidebar-foot"><span class="live-dot"></span><div><strong>System bereit</strong><small>Daten lokal gespeichert</small></div></div>
+    </aside>
 
-      <div class="field">
-        <label for="username">Benutzername</label>
-        <input id="username" type="text" autocomplete="username" />
-      </div>
-
-      <div class="field">
-        <label for="password">Passwort</label>
-        <input id="password" type="password" autocomplete="current-password" />
-      </div>
-
-      <button id="loginBtn" class="primary">Login</button>
-      <div id="loginMsg" class="status">Bitte anmelden.</div>
-    </div>
-  </div>
-
-  <div id="appScreen" class="hidden">
-    <div class="app">
+    <main>
       <header class="topbar">
-        <div>
-          <h1>Paketlager</h1>
-          <div class="subtitle">Lokal auf einem Gerät · OCR · Barcode · Lagernummern 1–500</div>
-        </div>
-        <button id="logoutBtn" class="danger small-btn">Logout</button>
+        <button id="menuBtn" class="icon-btn menu-btn" aria-label="Menü öffnen">☰</button>
+        <div><p class="eyebrow" id="pageEyebrow">PAKETSHOP</p><h1 id="pageTitle">Guten Tag</h1></div>
+        <div class="top-actions"><label class="global-search"><span>⌕</span><input id="globalSearch" placeholder="Paket, Name oder Lagerplatz suchen" aria-label="Globale Suche"></label><div class="avatar">MA</div></div>
       </header>
 
-      <section class="stats">
-        <div class="stat-card">
-          <span>Belegt</span>
-          <strong id="statUsed">0</strong>
+      <section id="dashboard" class="view active">
+        <div class="hero">
+          <div><span class="hero-kicker">HEUTE IM PAKETSHOP</span><h2>Alles im Blick.<br><em>Jedes Paket am richtigen Platz.</em></h2><p>Annahme, Lagerung und Abholung zentral verwalten – unabhängig vom Paketdienst.</p></div>
+          <button class="primary big" data-go="intake">＋ Neues Paket annehmen</button>
         </div>
-        <div class="stat-card">
-          <span>Frei</span>
-          <strong id="statFree">500</strong>
+        <div class="metrics">
+          <article><div class="metric-head"><span class="metric-icon green">↙</span><span class="trend">Heute</span></div><strong id="metricToday">0</strong><p>Pakete angenommen</p></article>
+          <article><div class="metric-head"><span class="metric-icon sand">▦</span><span id="capacityText">0 % belegt</span></div><strong id="metricStored">0</strong><p>Aktuell eingelagert</p><div class="progress"><i id="capacityBar"></i></div></article>
+          <article><div class="metric-head"><span class="metric-icon blue">✓</span><span class="trend">Heute</span></div><strong id="metricPicked">0</strong><p>Pakete ausgegeben</p></article>
+          <article><div class="metric-head"><span class="metric-icon rose">!</span><span>Über 7 Tage</span></div><strong id="metricOverdue">0</strong><p>Überfällige Pakete</p></article>
         </div>
-        <div class="stat-card">
-          <span>Gesamt</span>
-          <strong>500</strong>
-        </div>
-      </section>
-
-      <nav class="tabs">
-        <button class="tab-btn active" data-tab="annahme">Annahme</button>
-        <button class="tab-btn" data-tab="suche">Suche</button>
-        <button class="tab-btn" data-tab="einstellungen">Einstellungen</button>
-      </nav>
-
-      <section id="tab-annahme" class="tab-panel">
-        <div class="card">
-          <h2>Neues Paket</h2>
-
-          <div class="button-grid two-cols">
-            <button id="scanAddressBtn" class="primary">Adressetikett scannen</button>
-            <button id="startBarcodeBtn">Barcode scannen</button>
-          </div>
-
-          <input
-            id="packageImageInput"
-            type="file"
-            accept="image/*"
-            capture="environment"
-            class="hidden"
-          />
-
-          <div id="scannerWrap" class="scanner-wrap hidden">
-            <div id="barcodeScanner"></div>
-            <div class="button-grid">
-              <button id="stopBarcodeBtn" class="danger">Scanner stoppen</button>
-            </div>
-          </div>
-
-          <div class="completion-box">
-            <div class="completion-title">Paketstatus</div>
-            <div class="completion-grid">
-              <div id="statusStorage" class="status-pill">Lagernummer fehlt</div>
-              <div id="statusBarcode" class="status-pill">Barcode fehlt</div>
-              <div id="statusAddress" class="status-pill">Adresse fehlt</div>
-              <div id="statusReady" class="status-pill">Nicht speicherbereit</div>
-            </div>
-          </div>
-
-          <div class="current-storage-box">
-            <div class="current-storage-label">Aktuelle Lagernummer</div>
-            <div id="currentStorageBig" class="current-storage-value">-</div>
-            <div class="button-grid">
-              <button id="showStorageOverlayBtn">Lagernummer groß anzeigen</button>
-            </div>
-          </div>
-
-          <div class="field">
-            <label for="trackingNumber">Paketnummer / Barcode</label>
-            <input id="trackingNumber" type="text" placeholder="Darf leer bleiben" />
-          </div>
-
-          <div class="field">
-            <label for="ocrText">OCR Rohtext</label>
-            <textarea id="ocrText" placeholder="Hier erscheint der erkannte Text"></textarea>
-          </div>
-
-          <div class="grid">
-            <div class="field">
-              <label for="firstName">Vorname</label>
-              <input id="firstName" type="text" placeholder="Darf leer bleiben" />
-            </div>
-
-            <div class="field">
-              <label for="lastName">Name</label>
-              <input id="lastName" type="text" placeholder="Darf leer bleiben" />
-            </div>
-
-            <div class="field">
-              <label for="street">Straße</label>
-              <input id="street" type="text" placeholder="Darf leer bleiben" />
-            </div>
-
-            <div class="field">
-              <label for="houseNumber">Hausnummer</label>
-              <input id="houseNumber" type="text" placeholder="Darf leer bleiben" />
-            </div>
-
-            <div class="field">
-              <label for="postalCode">PLZ</label>
-              <input id="postalCode" type="text" placeholder="Darf leer bleiben" />
-            </div>
-
-            <div class="field">
-              <label for="city">Ort</label>
-              <input id="city" type="text" placeholder="Darf leer bleiben" />
-            </div>
-          </div>
-
-          <div class="grid">
-            <div class="field">
-              <label for="storageNumber">Lagernummer</label>
-              <input id="storageNumber" type="text" readonly />
-            </div>
-
-            <div class="field">
-              <label for="notes">Notiz</label>
-              <input id="notes" type="text" placeholder="Optional" />
-            </div>
-          </div>
-
-          <div class="button-grid three-cols">
-            <button id="saveBtn" class="primary">Speichern</button>
-            <button id="saveAndZplBtn">Speichern + ZPL</button>
-            <button id="clearBtn" class="danger">Leeren</button>
-          </div>
-
-          <div id="acceptStatus" class="status">Bereit.</div>
+        <div class="dashboard-grid">
+          <section class="panel"><div class="panel-head"><div><p class="eyebrow">LETZTE BEWEGUNGEN</p><h3>Aktuelle Pakete</h3></div><button class="text-btn" data-go="inventory">Alle anzeigen →</button></div><div id="recentList" class="package-list"></div></section>
+          <section class="panel"><div class="panel-head"><div><p class="eyebrow">PAKETDIENSTE</p><h3>Verteilung im Lager</h3></div></div><div id="carrierChart" class="carrier-chart"></div></section>
         </div>
       </section>
 
-      <section id="tab-suche" class="tab-panel hidden">
-        <div class="card">
-          <h2>Suche</h2>
-
-          <div class="field">
-            <label for="searchInput">Suche</label>
-            <input id="searchInput" type="text" placeholder="Name, Adresse, Lagernummer, Paketnummer ..." />
+      <section id="intake" class="view">
+        <div class="section-head"><div><p class="eyebrow">SCHNELLE ANNAHME</p><h2>Paket einlagern</h2><p>Sendungsdaten erfassen und automatisch einen freien Lagerplatz zuweisen.</p></div><div class="step-chip">1 Paket · ca. 20 Sekunden</div></div>
+        <form id="intakeForm" class="form-layout">
+          <div class="panel form-panel">
+            <h3>Sendungsdaten</h3>
+            <div class="carrier-picker" id="carrierPicker" role="radiogroup" aria-label="Paketdienst"></div>
+            <label>Sendungsnummer <span>*</span><div class="input-action"><input id="tracking" required autocomplete="off" placeholder="Barcode scannen oder eingeben"><button type="button" id="scanBtn">▣ Scannen</button></div></label>
+            <div class="two-col"><label>Vorname<input id="firstName" autocomplete="given-name"></label><label>Nachname / Firma <span>*</span><input id="lastName" required autocomplete="family-name"></label></div>
+            <div class="two-col"><label>Straße<input id="street"></label><label>Hausnummer<input id="houseNo"></label></div>
+            <div class="two-col narrow"><label>PLZ<input id="zip" inputmode="numeric"></label><label>Ort<input id="city"></label></div>
+            <label>Notiz<textarea id="notes" rows="3" placeholder="Optional, z. B. beschädigte Verpackung"></textarea></label>
           </div>
-
-          <div class="button-grid two-cols">
-            <button id="searchBtn">Suchen</button>
-            <button id="showAllBtn">Alle anzeigen</button>
-          </div>
-
-          <div id="searchStatus" class="status">Noch keine Suche ausgeführt.</div>
-          <div id="results" class="results"></div>
-        </div>
+          <aside class="panel assignment"><p class="eyebrow">AUTOMATISCHE ZUWEISUNG</p><h3>Lagerplatz</h3><div class="slot-display"><small>FREIER PLATZ</small><strong id="nextSlot">A-001</strong></div><label>Lagerzone<select id="zone"><option value="A">Zone A · Standard</option><option value="B">Zone B · Großpakete</option><option value="C">Zone C · Retouren</option></select></label><div class="info-box">Der nächste freie Platz der gewählten Zone wird automatisch reserviert.</div><button class="primary full" type="submit">Paket verbindlich einlagern</button><button class="secondary full" type="reset">Eingabe zurücksetzen</button></aside>
+        </form>
       </section>
 
-      <section id="tab-einstellungen" class="tab-panel hidden">
-        <div class="card">
-          <h2>Einstellungen</h2>
-
-          <div class="button-grid two-cols">
-            <button id="exportBtn">Backup exportieren</button>
-            <button id="importBtn">Backup importieren</button>
-          </div>
-
-          <input id="importFile" type="file" accept="application/json" class="hidden" />
-
-          <div class="button-grid">
-            <button id="clearCollectedBtn" class="danger">Abgeholte löschen</button>
-          </div>
-
-          <div class="field">
-            <label for="zplOutput">ZPL-Ausgabe</label>
-            <textarea id="zplOutput" class="mono" placeholder="Hier erscheint die ZPL-Ausgabe"></textarea>
-          </div>
-        </div>
+      <section id="inventory" class="view">
+        <div class="section-head"><div><p class="eyebrow">LAGERWIRTSCHAFT</p><h2>Aktueller Bestand</h2><p>Alle eingelagerten und bereits abgeholten Pakete.</p></div><button class="primary" data-go="intake">＋ Paket annehmen</button></div>
+        <div class="panel"><div class="filters"><label class="table-search">⌕ <input id="inventorySearch" placeholder="Bestand durchsuchen"></label><select id="carrierFilter"><option value="">Alle Paketdienste</option></select><select id="statusFilter"><option value="stored">Eingelagert</option><option value="picked">Abgeholt</option><option value="">Alle Status</option></select></div><div class="table-wrap"><table><thead><tr><th>Lagerplatz</th><th>Empfänger</th><th>Paketdienst</th><th>Sendungsnummer</th><th>Eingang</th><th>Status</th><th></th></tr></thead><tbody id="inventoryBody"></tbody></table></div><div id="inventoryEmpty" class="empty hidden">Keine passenden Pakete gefunden.</div></div>
       </section>
-    </div>
+
+      <section id="pickup" class="view">
+        <div class="section-head"><div><p class="eyebrow">PAKETAUSGABE</p><h2>Paket abholen</h2><p>Sendungsnummer, Empfänger oder Lagerplatz eingeben.</p></div></div>
+        <div class="pickup-search"><span>⌕</span><input id="pickupSearch" autofocus placeholder="Suche starten …"></div><div id="pickupResults" class="pickup-grid"></div>
+      </section>
+
+      <section id="settings" class="view">
+        <div class="section-head"><div><p class="eyebrow">VERWALTUNG</p><h2>Einstellungen & Datensicherung</h2><p>Lokale Daten sichern oder wiederherstellen.</p></div></div>
+        <div class="settings-grid"><div class="panel"><h3>Datensicherung</h3><p>Exportieren Sie regelmäßig eine Sicherung aller Paketdaten.</p><button id="exportBtn" class="primary full">Backup herunterladen</button><label class="upload-btn">Backup importieren<input id="importInput" type="file" accept="application/json" hidden></label></div><div class="panel"><h3>Lagerkapazität</h3><p>Drei Zonen mit jeweils 500 nummerierten Lagerplätzen.</p><div class="zone-row"><span>Zone A · Standard</span><strong>500</strong></div><div class="zone-row"><span>Zone B · Großpakete</span><strong>500</strong></div><div class="zone-row"><span>Zone C · Retouren</span><strong>500</strong></div></div></div>
+      </section>
+    </main>
   </div>
-
-  <div id="storageOverlay" class="storage-overlay hidden">
-    <div class="storage-overlay-card">
-      <div class="storage-overlay-title">Lagernummer</div>
-      <div id="overlayStorageNumber" class="storage-overlay-number">-</div>
-      <div id="overlayStorageMeta" class="storage-overlay-meta"></div>
-      <button id="closeStorageOverlayBtn" class="primary">Schließen</button>
-    </div>
-  </div>
-
-  <script src="./app.js"></script>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <dialog id="confirmDialog"><p class="eyebrow">ABHOLUNG BESTÄTIGEN</p><h3 id="dialogTitle">Paket ausgeben?</h3><p id="dialogText"></p><div><button id="cancelDialog" class="secondary">Abbrechen</button><button id="confirmPickup" class="primary">Abholung bestätigen</button></div></dialog>
+  <script src="app.js"></script>
 </body>
 </html>
